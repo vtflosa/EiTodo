@@ -16,7 +16,7 @@ import signal
 import socket
 import traceback
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer, QSocketNotifier
+from PyQt6.QtCore import QSocketNotifier
 
 # local imports
 from logger import Logger as Log
@@ -226,22 +226,40 @@ def main():
                      font=font, font_size=font_size)
 
         # Handle OS-level termination (system shutdown, kill, session end).
-        # Python signal handlers only fire between bytecodes, not while Qt owns
-        # the event loop — the QTimer below wakes Python every 500 ms so the
-        # handlers can run.
+        # Python signal handlers must not call Qt directly, and a poll timer
+        # (old approach) can miss SIGTERM on fast shutdowns. Instead we use a
+        # socket pair: the handler writes one byte, QSocketNotifier wakes the
+        # Qt event loop immediately, then _dispatch_signal() calls _quit() from
+        # the main thread.
+        _sig_r, _sig_w = socket.socketpair()
+        _sig_r.setblocking(False)
+        _sig_w.setblocking(False)
+        _pending_sigs: list[int] = []
+
         def _handle_os_signal(signum, _frame):
-            sig_name = signal.Signals(signum).name
-            Output.print(f"OS signal received ({sig_name}) — saving and quitting",
-                         level="info")
-            window._quit()
+            _pending_sigs.append(signum)
+            try:
+                _sig_w.send(b'\x00')
+            except OSError:
+                pass
+
+        def _dispatch_signal():
+            try:
+                _sig_r.recv(256)
+            except OSError:
+                pass
+            while _pending_sigs:
+                signum = _pending_sigs.pop(0)
+                sig_name = signal.Signals(signum).name
+                Output.print(f"OS signal received ({sig_name}) — saving and quitting",
+                             level="info")
+                window._quit()
+
+        _sig_notifier = QSocketNotifier(_sig_r.fileno(), QSocketNotifier.Type.Read)
+        _sig_notifier.activated.connect(lambda _fd: _dispatch_signal())
 
         signal.signal(signal.SIGTERM, _handle_os_signal)
         signal.signal(signal.SIGHUP, _handle_os_signal)
-
-        _sig_poll = QTimer()
-        _sig_poll.setInterval(500)
-        _sig_poll.start()
-        _sig_poll.timeout.connect(lambda: None)
 
         if not start_hidden:
             window.show()
