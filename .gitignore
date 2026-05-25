@@ -23,5 +23,5 @@ save/
 # --- Test / stray artifacts ---
 /new location/
 
-# Note: source/ (icon.psd) is intentionally NOT ignored — it is a design
-# source asset you may want to version. Run `git add source/` to track it.
+# --- Design source assets (e.g. icon.psd) ---
+source/
