@@ -16,7 +16,8 @@ import signal
 import socket
 import traceback
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QSocketNotifier
+from PyQt6.QtCore import QObject, QSocketNotifier, pyqtSlot
+from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusReply
 
 # local imports
 from logger import Logger as Log
@@ -31,9 +32,6 @@ from guiqt import MainWindow as gui
 
 
 #   todo create a linux installer and publish it on github + on install, ask whether to add it to automatic startup
-
-# todo vérifier comportement à l'extinction de l'ordi
-
 
 # todo écrire un fichier d'aide
 
@@ -165,6 +163,77 @@ def first_launch() -> bool:
     return True
 
 
+class ShutdownInhibitor(QObject):
+    """Hold a systemd-logind *delay* inhibitor lock so EiTodo gets a guaranteed
+    (bounded) window to back up param.json on reboot / shutdown.
+
+    Why: on a real reboot NONE of the in-process hooks (SIGTERM, XSMP
+    commitDataRequest, aboutToQuit) get a chance to run — logind sends SIGTERM
+    then SIGKILL almost immediately and the process is gone before any Python
+    handler executes (confirmed by the reboot-test log). A 'delay' lock flips
+    the contract: logind emits PrepareForShutdown(true) and then *waits* for us
+    to release the lock (up to InhibitDelayMaxSec, 5 s by default) before
+    continuing. That wait IS our save window. The lock is just an open file
+    descriptor: closing it (or the process dying) releases it, so it can NEVER
+    block a shutdown indefinitely.
+    """
+
+    _SERVICE = "org.freedesktop.login1"
+    _PATH    = "/org/freedesktop/login1"
+    _IFACE   = "org.freedesktop.login1.Manager"
+
+    def __init__(self, on_shutdown, parent=None):
+        super().__init__(parent)
+        self._on_shutdown = on_shutdown   # save callback (idempotent)
+        self._lock_fd = -1                # OUR dup of the inhibitor fd
+        self._bus = QDBusConnection.systemBus()
+        if not self._bus.isConnected():
+            Output.print("Shutdown inhibitor: no D-Bus system bus — "
+                         "falling back to SIGTERM/XSMP hooks", level="warning")
+            return
+        self._bus.connect(self._SERVICE, self._PATH, self._IFACE,
+                          "PrepareForShutdown", self._on_prepare_for_shutdown)
+        self._acquire()
+
+    def _acquire(self):
+        """Take a 'delay' lock on 'shutdown' and keep the fd open."""
+        manager = QDBusInterface(self._SERVICE, self._PATH, self._IFACE, self._bus)
+        reply = QDBusReply(manager.call(
+            "Inhibit", "shutdown", "EiTodo",
+            "Back up param.json before shutdown", "delay"))
+        if not reply.isValid():
+            Output.print(f"Shutdown inhibitor: Inhibit() failed: "
+                         f"{reply.error().message()}", level="warning")
+            return
+        qfd = reply.value()               # QDBusUnixFileDescriptor (owns its fd)
+        # Dup into a fd WE own, so releasing the lock is a deterministic
+        # os.close() instead of relying on Python GC of the Qt wrapper.
+        self._lock_fd = os.dup(qfd.fileDescriptor())
+        Output.print("Shutdown inhibitor: 'delay' lock acquired "
+                     "(logind will wait for us before powering off)", level="info")
+
+    @pyqtSlot(bool)
+    def _on_prepare_for_shutdown(self, starting):
+        # starting=False => a previously announced shutdown was cancelled: no-op.
+        if not starting:
+            return
+        Output.print("Shutdown path: logind PrepareForShutdown", level="info")
+        self._on_shutdown()               # _perform_shutdown_save() (idempotent)
+        QApplication.quit()               # clean exit -> the finally logs END
+        # Note: we do NOT release the lock here. We keep it until main()'s
+        # finally so logind keeps waiting while we write END OF PROGRAM.
+
+    def release(self):
+        """Release the lock (idempotent). Called last, in main()'s finally."""
+        if self._lock_fd >= 0:
+            try:
+                os.close(self._lock_fd)
+            except OSError:
+                pass
+            self._lock_fd = -1
+            Output.print("Shutdown inhibitor: lock released", level="info")
+
+
 def main():
 
     # first_launch() creates the config file and working folders; only then can
@@ -183,6 +252,7 @@ def main():
     # delete excess timestamped backups in the save folder
     clean_old_backups()
 
+    inhibitor = None  # set inside the try; referenced in finally to release it
     try:
         # ##################### MAIN LOGIC  ###########################
         # If the configured data file is missing, fall back to the in-app
@@ -225,46 +295,86 @@ def main():
                      default_json_name=_DEFAULT_PATH["json_file_path"],
                      font=font, font_size=font_size)
 
-        # Handle OS-level termination (system shutdown, kill, session end).
-        # Python signal handlers must not call Qt directly, and a poll timer
-        # (old approach) can miss SIGTERM on fast shutdowns. Instead we use a
-        # socket pair: the handler writes one byte, QSocketNotifier wakes the
-        # Qt event loop immediately, then _dispatch_signal() calls _quit() from
-        # the main thread.
+        # ---- Shutdown / exit save hooks --------------------------------------
+        # EiTodo must back up param.json on the way out, whatever the exit route.
+        # Different routes need different hooks, so three complementary layers are
+        # installed, all funnelling into the idempotent _perform_shutdown_save()
+        # (its _shutdown_saved guard makes the repeated calls harmless):
+        #
+        #   1. systemd-logind delay inhibitor  -> reboot / shutdown / poweroff
+        #   2. XSMP commitDataRequest          -> graphical logout (X11)
+        #      + aboutToQuit                    -> tray "Quitter" and any other exit
+        #   3. SIGTERM / SIGHUP                 -> `kill`, non-graphical termination
+        #
+        # Layer 1 is the one that actually fires on a real reboot: logind kills
+        # the process too fast for any in-process handler to run, so we ask it to
+        # wait for us first (see ShutdownInhibitor). The proof a save happened is
+        # the "Param backup:" log line, so the messages below only name the route.
+
+        # 1. logind delay inhibitor (primary reboot/shutdown path). Keep the
+        # reference so it is not garbage-collected while the app runs.
+        inhibitor = ShutdownInhibitor(window._perform_shutdown_save)
+
+        # 2. Graphical session end. Under X11 a logout is delivered via the X
+        # Session Management Protocol, not as a signal: Qt emits commitDataRequest
+        # (display still alive, "save now") and then quits its own event loop,
+        # which also emits aboutToQuit as the catch-all for any other exit.
+        def _on_commit_data(_mgr):
+            Output.print("Shutdown path: commitDataRequest (XSMP session end)",
+                         level="info")
+            window._perform_shutdown_save()
+
+        def _on_about_to_quit():
+            Output.print("Shutdown path: aboutToQuit", level="info")
+            window._perform_shutdown_save()
+
+        app.commitDataRequest.connect(_on_commit_data)
+        app.aboutToQuit.connect(_on_about_to_quit)
+
+        # 3. POSIX signals (`kill`, or a systemd user session that signals its
+        # processes). While app.exec() is idle it is blocked in Qt's C++ event
+        # loop, so a pure-Python signal handler would not run until the
+        # interpreter regains control. set_wakeup_fd() bridges that: CPython's
+        # C-level handler writes the signal number into a socket, waking the
+        # QSocketNotifier to run _dispatch_signal() in the main thread. A Python
+        # handler must still be registered per signal, otherwise CPython does not
+        # write to the wakeup fd.
         _sig_r, _sig_w = socket.socketpair()
         _sig_r.setblocking(False)
         _sig_w.setblocking(False)
-        _pending_sigs: list[int] = []
-
-        def _handle_os_signal(signum, _frame):
-            _pending_sigs.append(signum)
-            try:
-                _sig_w.send(b'\x00')
-            except OSError:
-                pass
 
         def _dispatch_signal():
             try:
-                _sig_r.recv(256)
+                data = _sig_r.recv(256)
             except OSError:
-                pass
-            while _pending_sigs:
-                signum = _pending_sigs.pop(0)
-                sig_name = signal.Signals(signum).name
-                Output.print(f"OS signal received ({sig_name}) — saving and quitting",
+                return
+            for signum in data:  # set_wakeup_fd writes the signal number as one byte
+                try:
+                    sig_name = signal.Signals(signum).name
+                except ValueError:
+                    continue
+                Output.print(f"Shutdown path: OS signal ({sig_name}) received",
                              level="info")
                 window._quit()
 
         _sig_notifier = QSocketNotifier(_sig_r.fileno(), QSocketNotifier.Type.Read)
         _sig_notifier.activated.connect(lambda _fd: _dispatch_signal())
 
+        def _handle_os_signal(_signum, _frame):
+            pass  # the wake-up is done by set_wakeup_fd; the work is in _dispatch_signal
+
+        signal.set_wakeup_fd(_sig_w.fileno())
         signal.signal(signal.SIGTERM, _handle_os_signal)
         signal.signal(signal.SIGHUP, _handle_os_signal)
+        # ----------------------------------------------------------------------
 
         if not start_hidden:
             window.show()
             window.raise_()
             window.activateWindow()
+
+        Output.print("Startup complete — idle in tray, event loop running",
+                     level="info")
         app.exec()
 
         # #################### END OF MAIN LOGIC ######################
@@ -275,6 +385,8 @@ def main():
     finally:
         Output.print(f"\n")
         Output.print(f"*******  END OF PROGRAM !   ******\n\n")
+        if inhibitor is not None:
+            inhibitor.release()  # last: logind has waited for us up to here
 
 # ###########################  END OF MAIN  #############################
 

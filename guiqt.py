@@ -331,6 +331,9 @@ class MainWindow(QMainWindow):
         # Relative default data path persisted when the user keeps the default
         # location (single source of truth: main._DEFAULT_PATH).
         self._default_json_name = default_json_name
+        # Guards the shutdown save so it runs exactly once no matter how the app
+        # is terminated (tray quit, SIGTERM, or desktop session end).
+        self._shutdown_saved = False
 
         # Find target screen by name, fall back to primary
         target_screen = None
@@ -803,11 +806,38 @@ class MainWindow(QMainWindow):
                      level="info")
 
     def _quit(self):
+        self._perform_shutdown_save()
+        QApplication.quit()
+
+    def _perform_shutdown_save(self):
+        """Persist data and geometry exactly once, regardless of how the app is
+        being terminated: the tray 'Quitter' action, a SIGTERM, or a desktop
+        session end (logout / shutdown / reboot).
+
+        On X11 a session end is delivered through the X Session Management
+        Protocol, not as SIGTERM, so the SIGTERM handler never fires and Qt
+        quits the event loop on its own — this is the path that left no backup.
+        main.py wires this method to QApplication.commitDataRequest (the proper
+        'session is ending, save now' hook, display still alive) and to
+        aboutToQuit (catch-all for any other exit route); the guard below makes
+        the repeated calls harmless.
+
+        The data backup runs first because it is the critical operation;
+        _save_geometry() touches the GUI and may fail if the display server is
+        already gone during shutdown, so it is best-effort and must not abort
+        the backup.
+        """
+        if self._shutdown_saved:
+            return
+        self._shutdown_saved = True
         self._stop_editor_timers()
         self._flush_editors()
-        self._save_geometry()
         self._backup_param()
-        QApplication.quit()
+        try:
+            self._save_geometry()
+        except Exception as e:
+            Output.print(f"Geometry save skipped during shutdown: {e}",
+                         level="warning")
 
     def _hourly_backup(self):
         """Flush any pending editor changes to disk, then run a backup."""
