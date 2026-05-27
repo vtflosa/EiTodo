@@ -16,6 +16,7 @@ def version():
               "V 0.8 : translation multilingue\n"
               "V 0.9 : in-app help dialog + menu to set backup retention limit\n"
               "V 1.0 : public release — installer hardening, autostart prompt, README\n"
-              "V 1.1 : German and Spanish UI + help translations"
+              "V 1.1 : German and Spanish UI + help translations\n"
+              "V 1.2 : docs corrected — cloud sync only, direct network shares not recommended"
               )
     return v_text.split("\n")[-1]
