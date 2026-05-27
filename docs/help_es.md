@@ -65,12 +65,16 @@ sincronizarlo mediante cualquier servicio de sincronización de
 archivos (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive,
 etc.) para compartir la misma matriz entre varios ordenadores.
 
-También puedes colocar el archivo en una carpeta compartida en
-la red local — un recurso NAS (Samba/NFS) o cualquier otra
-carpeta montada en cada máquina. En una red local los cambios
-se propagan casi al instante: una edición hecha en un ordenador
-aparece en los demás en menos de un segundo, sin pasar por la
-nube.
+**Los recursos de red directos no son recomendables** (NAS
+Samba/NFS, carpetas compartidas desde otro ordenador). EiTodo
+vigila el archivo de datos mediante las notificaciones del
+sistema de archivos local del sistema operativo, que no se
+disparan cuando otra máquina escribe en un recurso de red. Con
+un recurso de red tendrías que reiniciar la aplicación en cada
+ordenador para obtener las modificaciones del otro lado. Un
+servicio de sincronización en la nube escribe en tu disco local
+y, por tanto, dispara la actualización en vivo correctamente —
+quédate con esta solución.
 
 Instalación:
 

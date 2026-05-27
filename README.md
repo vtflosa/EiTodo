@@ -61,10 +61,12 @@ L'application se loge dans la zone de notification. **Clic gauche** sur l'icône
 
 Les tâches sont stockées dans un unique fichier JSON. Pour partager la même matrice entre plusieurs machines :
 
-1. Placer le fichier de données dans un dossier synchronisé — service cloud (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive…) **ou** dossier partagé du réseau local (NAS Samba/NFS, ou tout autre partage monté sur chaque ordinateur) — par exemple via **menu → Changer l'emplacement des données → Déplacer le fichier actuel**.
-2. Sur chaque autre ordinateur, installer EiTodo puis utiliser **menu → Changer l'emplacement des données → Indiquer un fichier existant** pour pointer vers le fichier partagé.
+1. Placer le fichier de données dans un dossier synchronisé via un service cloud (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive…) — par exemple via **menu → Changer l'emplacement des données → Déplacer le fichier actuel**.
+2. Sur chaque autre ordinateur, installer EiTodo puis utiliser **menu → Changer l'emplacement des données → Indiquer un fichier existant** pour pointer vers le fichier synchronisé.
 
-Les modifications faites sur une machine apparaissent sur l'autre dans les secondes qui suivent (quasi instantanément sur un réseau local), sans relancer l'application.
+Les modifications faites sur une machine apparaissent sur l'autre dans les secondes qui suivent, sans relancer l'application.
+
+> ⚠️ **Les partages réseau directs (NAS Samba/NFS, dossier partagé d'un autre PC) ne sont pas recommandés.** La surveillance temps-réel d'EiTodo s'appuie sur les notifications du système de fichiers local, qui ne se déclenchent pas quand un autre poste écrit sur un partage réseau ; vous devriez relancer l'application sur chaque machine pour voir les changements. Un service cloud écrit sur votre disque local et déclenche donc la mise à jour correctement.
 
 #### Sauvegardes automatiques
 
@@ -174,10 +176,12 @@ The app lives in the system tray. **Left-click** the icon to show/hide the windo
 
 Tasks are stored in a single JSON file. To share the same matrix between several machines:
 
-1. Put the data file inside a shared folder — either a cloud-sync service (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive…) **or** a local-network share (Samba/NFS NAS, or any other folder mounted on every computer) — for example via **menu → Change data location → Move the current file**.
-2. On every other computer, install EiTodo and use **menu → Change data location → Point to an existing file** to select the shared file.
+1. Put the data file inside a folder synced through a cloud service (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive…) — for example via **menu → Change data location → Move the current file**.
+2. On every other computer, install EiTodo and use **menu → Change data location → Point to an existing file** to select the synced file.
 
-Edits made on one machine appear on the other within seconds (almost instantly on a local network), without restarting the app.
+Edits made on one machine appear on the other within seconds, without restarting the app.
+
+> ⚠️ **Direct network shares (NAS Samba/NFS, folders shared from another PC) are not recommended.** EiTodo's live watcher relies on local filesystem notifications, which do not fire when another computer writes to a network share — you would have to restart the app on each machine to see the other side's changes. A cloud-sync service writes to your local disk and therefore triggers the live update correctly.
 
 #### Automatic backups
 

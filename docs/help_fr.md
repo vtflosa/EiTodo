@@ -68,12 +68,16 @@ fichiers (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive,
 etc.) pour partager la même matrice entre plusieurs
 ordinateurs.
 
-Vous pouvez aussi placer le fichier dans un dossier partagé du
-réseau local — un partage NAS (Samba/NFS) ou tout autre dossier
-monté sur chaque machine. Sur un réseau local, les mises à jour
-se propagent quasi instantanément : une modification faite sur
-un ordinateur apparaît sur les autres en moins d'une seconde,
-sans passer par un service cloud.
+**Les partages réseau directs ne sont pas recommandés** (NAS
+Samba/NFS, dossiers partagés depuis un autre ordinateur).
+EiTodo surveille le fichier via les notifications du système
+de fichiers local, qui ne se déclenchent pas quand un autre
+poste écrit sur un partage réseau. Avec un partage réseau, il
+faudrait relancer l'application sur chaque ordinateur pour
+récupérer les modifications de l'autre côté. Un service de
+synchronisation cloud écrit sur votre disque local et déclenche
+donc la mise à jour temps-réel correctement — restez-en à cette
+solution.
 
 Mise en place :
 

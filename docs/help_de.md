@@ -68,13 +68,16 @@ sie über einen Datei-Synchronisationsdienst (Dropbox, MEGA,
 Nextcloud, Syncthing, Google Drive usw.) zu synchronisieren, um
 dieselbe Matrix auf mehreren Rechnern zu teilen.
 
-Alternativ können Sie die Datei in einem Ordner ablegen, der
-über das lokale Netzwerk geteilt wird — eine NAS-Freigabe
-(Samba/NFS) oder jede andere Freigabe, die auf jedem Rechner
-eingehängt ist. Im LAN werden Änderungen praktisch sofort
-übernommen: eine Bearbeitung auf einem Rechner erscheint
-binnen einer Sekunde auf den anderen, ohne Umweg über die
-Cloud.
+**Direkte Netzwerkfreigaben sind nicht empfohlen** (NAS
+Samba/NFS, Ordner, die von einem anderen Computer freigegeben
+werden). EiTodo überwacht die Datendatei über die lokalen
+Dateisystem-Benachrichtigungen des Betriebssystems, die nicht
+ausgelöst werden, wenn ein anderer Rechner auf eine
+Netzwerkfreigabe schreibt. Bei einer Netzwerkfreigabe müssten
+Sie die App auf jedem Rechner neu starten, um die Änderungen
+der anderen Seite zu erhalten. Ein Cloud-Synchronisationsdienst
+schreibt auf Ihre lokale Festplatte und löst daher die
+Live-Aktualisierung korrekt aus — bleiben Sie dabei.
 
 Einrichtung:
 

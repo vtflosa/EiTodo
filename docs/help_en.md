@@ -58,11 +58,14 @@ file-synchronisation service (Dropbox, MEGA, Nextcloud, Syncthing,
 Google Drive, etc.) is enough to share the same matrix between
 several computers.
 
-Alternatively, you can place the file on a folder shared across
-the local network — a NAS share (Samba/NFS) or any other share
-mounted on every machine. On a LAN, updates propagate almost
-instantly: an edit on one computer appears on the others within
-a second, without any cloud round-trip.
+**Direct network shares are not recommended** (NAS Samba/NFS,
+folders shared from another computer). EiTodo watches the data
+file through the operating system's local filesystem
+notifications, which do not fire when another machine writes to
+a network share. With a network share you would have to restart
+the app on each computer to pick up the other side's changes. A
+cloud-sync service writes to your local disk and therefore
+triggers the live update correctly — stick to that.
 
 Setup:
 
