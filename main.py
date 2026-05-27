@@ -32,13 +32,9 @@ from general import (read_config_file, read_config_file_menu,
 from todolist import ToDoList
 from guiqt import MainWindow as gui
 
-
-#  todo create a linux installer
-#
 #  todo     essayer install, et demander si a mettre en startup automatique
 
-# todo vérifi install et mise à jour si nouveau fichier
-
+# todo vérifi install et mise à jour si nouveau fichier comme traductions allemande et espagnoles
 
 # todo tout relire pour vérifier
 

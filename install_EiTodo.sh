@@ -18,11 +18,6 @@ GITHUB_USER="vtflosa"
 GITHUB_REPO="EiTodo"
 GITHUB_BRANCH="master"
 
-# PRIVATE repo only: a GitHub Personal Access Token with read access. Leave the
-# default for a public repo. Pass it without editing this file, e.g.:
-#   GITHUB_TOKEN=ghp_xxx ./install_EiTodo.sh
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"
-
 # Main Python file to execute
 MAIN_PYTHON_FILE="main.py"
 
@@ -44,13 +39,8 @@ EXTRA_SYSTEM_DEPS=""
 APP_NAME_LOWER=$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')
 INSTALL_SUBDIR=".local/share/${APP_NAME_LOWER}"
 
-# Archive URL: GitHub builds this from the git tree on the fly. A token (private
-# repo) uses the authenticated API tarball endpoint; otherwise the public one.
-if [ -n "$GITHUB_TOKEN" ]; then
-    ARCHIVE_URL="https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/tarball/${GITHUB_BRANCH}"
-else
-    ARCHIVE_URL="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
-fi
+# Archive URL: GitHub builds the tarball on the fly from the branch's HEAD.
+ARCHIVE_URL="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
 
 echo "╔══════════════════════════════════════════════════╗"
 echo "║     Installing ${APP_NAME}"
@@ -77,27 +67,41 @@ warning() {
     echo -e "${YELLOW}[WARNING]${NC} $1"
 }
 
-# Download helper: prefer curl, fall back to wget. Sends the GitHub auth header
-# when GITHUB_TOKEN is set (private repo).
+# Download helper: prefer curl, fall back to wget.
 download() {
     # $1 = url, $2 = output path
     if command -v curl &> /dev/null; then
-        if [ -n "$GITHUB_TOKEN" ]; then
-            curl -fL --progress-bar -H "Authorization: Bearer $GITHUB_TOKEN" "$1" -o "$2"
-        else
-            curl -fL --progress-bar "$1" -o "$2"
-        fi
+        curl -fL --progress-bar "$1" -o "$2"
     elif command -v wget &> /dev/null; then
-        if [ -n "$GITHUB_TOKEN" ]; then
-            wget -q --show-progress --header="Authorization: Bearer $GITHUB_TOKEN" "$1" -O "$2"
-        else
-            wget -q --show-progress "$1" -O "$2"
-        fi
+        wget -q --show-progress "$1" -O "$2"
     else
         error "Neither curl nor wget is installed — cannot download the archive."
         exit 1
     fi
 }
+
+
+# #############################################################
+# Installation mode (autostart or not) — asked up front
+# #############################################################
+# Autostart is opt-in: it must never be silently enabled. The choice is
+# captured here so the rest of the script can run unattended; the actual
+# autostart .desktop is written near the end alongside the menu launcher.
+
+echo "Installation options:"
+echo "  1) Install and launch ${APP_NAME} at every login (autostart)"
+echo "  2) Install only (launch manually from the menu)"
+echo ""
+ENABLE_AUTOSTART=false
+while true; do
+    read -rp "Choose [1/2]: " ans
+    case "$ans" in
+        1) ENABLE_AUTOSTART=true; break ;;
+        2) ENABLE_AUTOSTART=false; break ;;
+        *) echo "Please type 1 or 2." ;;
+    esac
+done
+echo ""
 
 
 # #############################################################
@@ -111,6 +115,11 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 info "Python 3 detected: $(python3 --version)"
+
+# Minor version (e.g. "3.12"). Used to install the matching python3.X-venv
+# package on Debian/Ubuntu — the meta-package python3-venv does not always
+# pull in the version of ensurepip that corresponds to the active python3.
+PY_MINOR="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 
 
 # #############################################################
@@ -127,7 +136,10 @@ PIP_OK=false
 if python3 -m pip --version &> /dev/null; then PIP_OK=true; fi
 
 VENV_OK=false
-if python3 -m venv --help &> /dev/null; then VENV_OK=true; fi
+# Test ensurepip, not `venv --help`: the venv module is in the stdlib and
+# always answers --help, but creating a working venv needs ensurepip, which
+# on Debian/Ubuntu lives in the separate python3.X-venv package.
+if python3 -c "import ensurepip" 2>/dev/null; then VENV_OK=true; fi
 
 XCB_OK=false
 if ldconfig -p 2>/dev/null | grep -q 'libxcb-cursor\.so'; then XCB_OK=true; fi
@@ -143,7 +155,7 @@ if [ "$PIP_OK" = true ] && [ "$VENV_OK" = true ] && [ "$XCB_OK" = true ] && [ "$
 else
     warning "Missing system dependencies:"
     [ "$PIP_OK" = false ]     && echo "  ✗ pip"
-    [ "$VENV_OK" = false ]    && echo "  ✗ venv"
+    [ "$VENV_OK" = false ]    && echo "  ✗ venv (ensurepip — python${PY_MINOR}-venv)"
     [ "$XCB_OK" = false ]     && echo "  ✗ libxcb-cursor (Qt xcb plugin)"
     [ "$TKINTER_OK" = false ] && echo "  ✗ tkinter"
 
@@ -153,7 +165,7 @@ else
         info "Distribution detected: Debian/Ubuntu"
         PKGS=""
         [ "$PIP_OK" = false ]     && PKGS="$PKGS python3-pip"
-        [ "$VENV_OK" = false ]    && PKGS="$PKGS python3-venv"
+        [ "$VENV_OK" = false ]    && PKGS="$PKGS python${PY_MINOR}-venv"
         [ "$XCB_OK" = false ]     && PKGS="$PKGS libxcb-cursor0"
         [ "$TKINTER_OK" = false ] && PKGS="$PKGS python3-tk"
         info "Installing:$PKGS $EXTRA_SYSTEM_DEPS"
@@ -180,7 +192,7 @@ else
 
     else
         error "Distribution not recognized."
-        error "Please install manually: python3-pip, python3-venv, libxcb-cursor0"
+        error "Please install manually: python3-pip, python${PY_MINOR}-venv, libxcb-cursor0"
         [ "$NEEDS_TKINTER" = true ] && error "and: python3-tk"
         exit 1
     fi
@@ -188,8 +200,8 @@ else
     # Post-installation check
     info "Post-installation check..."
     INSTALL_SUCCESS=true
-    python3 -m pip --version &>/dev/null || { error "✗ pip still missing"; INSTALL_SUCCESS=false; }
-    python3 -m venv --help   &>/dev/null || { error "✗ venv still missing"; INSTALL_SUCCESS=false; }
+    python3 -m pip --version    &>/dev/null || { error "✗ pip still missing"; INSTALL_SUCCESS=false; }
+    python3 -c "import ensurepip" 2>/dev/null || { error "✗ ensurepip still missing"; INSTALL_SUCCESS=false; }
     if [ "$NEEDS_TKINTER" = true ] && ! python3 -c "import tkinter" 2>/dev/null; then
         error "✗ tkinter still missing"; INSTALL_SUCCESS=false
     fi
@@ -217,7 +229,6 @@ trap 'rm -f "$TMP_ARCHIVE"' EXIT
 if ! download "$ARCHIVE_URL" "$TMP_ARCHIVE"; then
     error "Failed to download the archive from: $ARCHIVE_URL"
     error "Check the repository name/branch and your internet connection."
-    error "(If the repository is private, this URL requires authentication.)"
     exit 1
 fi
 
@@ -249,7 +260,10 @@ info "Application files installed ✓"
 cd "$INSTALL_DIR"
 
 info "Creating Python virtual environment..."
-python3 -m venv venv
+# --clear wipes any existing venv contents so a previous half-built venv
+# (e.g. from an install that failed before pip was bootstrapped) is rebuilt
+# cleanly instead of being upgraded in place.
+python3 -m venv --clear venv
 
 info "Installing Python dependencies..."
 source venv/bin/activate
@@ -320,6 +334,21 @@ fi
 
 
 # #############################################################
+# Autostart at login (XDG ~/.config/autostart) — opt-in only
+# #############################################################
+# Standard XDG autostart: any .desktop file in ~/.config/autostart is launched
+# by the session manager at login. We reuse the menu launcher unchanged.
+AUTOSTART_DIR="$HOME/.config/autostart"
+if [ "$ENABLE_AUTOSTART" = true ]; then
+    info "Enabling autostart at login..."
+    mkdir -p "$AUTOSTART_DIR"
+    cp "$DESKTOP_DIR/${APP_NAME}.desktop" "$AUTOSTART_DIR/"
+    chmod +x "$AUTOSTART_DIR/${APP_NAME}.desktop"
+    info "Autostart enabled ✓ ($AUTOSTART_DIR/${APP_NAME}.desktop)"
+fi
+
+
+# #############################################################
 # Create uninstall script
 # #############################################################
 
@@ -328,6 +357,7 @@ cat > "$INSTALL_DIR/uninstall.sh" << EOF
 echo "Uninstalling ${APP_NAME}..."
 rm -rf "$INSTALL_DIR"
 rm -f "$DESKTOP_DIR/${APP_NAME}.desktop"
+rm -f "$AUTOSTART_DIR/${APP_NAME}.desktop"
 rm -f ~/Bureau/${APP_NAME}.desktop
 rm -f ~/Desktop/${APP_NAME}.desktop
 echo "${APP_NAME} has been uninstalled."
@@ -345,6 +375,9 @@ info "You can now launch the application from:"
 echo "  • The applications menu (search for '${APP_NAME}')"
 if [ -n "$DESKTOP_FOLDER" ]; then
     echo "  • The icon on your desktop"
+fi
+if [ "$ENABLE_AUTOSTART" = true ]; then
+    echo "  • Automatically at the next login (autostart enabled)"
 fi
 echo ""
 info "To uninstall cleanly, execute in console: $INSTALL_DIR/uninstall.sh"

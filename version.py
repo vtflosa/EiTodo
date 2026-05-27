@@ -14,6 +14,7 @@ def version():
               "V 0.6 : added font selection\n"
               "V 0.7 : Save param en reboot or sigterm\n"
               "V 0.8 : translation multilingue\n"
-              "V 0.9 : in-app help dialog + menu to set backup retention limit"
+              "V 0.9 : in-app help dialog + menu to set backup retention limit\n"
+              "V 1.0 : public release — installer hardening, autostart prompt, README"
               )
     return v_text.split("\n")[-1]
