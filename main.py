@@ -37,8 +37,6 @@ from guiqt import MainWindow as gui
 #
 #  todo     essayer install, et demander si a mettre en startup automatique
 
-# todo écrire un fichier d'aide
-
 # todo vérifi install et mise à jour si nouveau fichier
 
 

@@ -20,8 +20,8 @@ from todolist import ToDoList
 from PyQt6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-    QMainWindow, QPlainTextEdit, QSizePolicy, QTextEdit,
-    QSystemTrayIcon, QMenu, QFileDialog, QMessageBox,
+    QMainWindow, QPlainTextEdit, QSizePolicy, QTextEdit, QTextBrowser,
+    QSystemTrayIcon, QMenu, QFileDialog, QMessageBox, QInputDialog,
     QDialog, QDialogButtonBox, QSlider, QLineEdit, QComboBox,
 )
 from PyQt6.QtCore import Qt, QLocale, QTimer, QUrl, pyqtSignal
@@ -333,6 +333,44 @@ class FontPickerDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Help dialog
+# ---------------------------------------------------------------------------
+
+class HelpDialog(QDialog):
+    """Modeless help window. Loads docs/help_<lang>.md as Markdown into a
+    QTextBrowser, falling back to docs/help_en.md when the requested
+    catalog is missing (e.g. user is running a language with no help yet).
+    Language is resolved by the caller from config.INI."""
+
+    def __init__(self, lang: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Help"))
+        self.resize(760, 720)
+
+        layout = QVBoxLayout(self)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        docs_dir = os.path.join(base_dir, "docs")
+        candidate = os.path.join(docs_dir, f"help_{lang}.md")
+        fallback = os.path.join(docs_dir, "help_en.md")
+        path = candidate if os.path.isfile(candidate) else fallback
+
+        try:
+            with open(path, "r", encoding="utf8") as f:
+                browser.setMarkdown(f.read())
+        except OSError as e:
+            browser.setPlainText(
+                self.tr("Help file not found:\n{0}").format(e))
+        layout.addWidget(browser)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.accept)
+        layout.addWidget(buttons)
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -388,6 +426,10 @@ class MainWindow(QMainWindow):
         load_backup_action = QAction(QIcon.fromTheme("document-open"), self.tr("Load a backup"), self)
         load_backup_action.triggered.connect(self._load_backup)
         tray_menu.addAction(load_backup_action)
+        backup_limit_action = QAction(QIcon.fromTheme("document-save"),
+                                      self.tr("Number of backups to keep…"), self)
+        backup_limit_action.triggered.connect(self._change_backup_limit)
+        tray_menu.addAction(backup_limit_action)
         change_location_action = QAction(QIcon.fromTheme("folder-open"), self.tr("Change data location"), self)
         change_location_action.triggered.connect(self._change_data_location_dialog)
         tray_menu.addAction(change_location_action)
@@ -428,6 +470,9 @@ class MainWindow(QMainWindow):
         ))
         tray_menu.addAction(start_hidden_action)
         tray_menu.addSeparator()
+        help_action = QAction(QIcon.fromTheme("help-contents"), self.tr("Help"), self)
+        help_action.triggered.connect(self._show_help)
+        tray_menu.addAction(help_action)
         quit_action = QAction(QIcon.fromTheme("application-exit"), self.tr("Quit"), self)
         quit_action.triggered.connect(self._quit)
         tray_menu.addAction(quit_action)
@@ -929,6 +974,48 @@ class MainWindow(QMainWindow):
                      level="info")
         logging.shutdown()
         os.execv(sys.executable, [sys.executable] + sys.argv)
+
+    def _change_backup_limit(self):
+        """Let the user set how many timestamped backups are kept in the save
+        folder. Floor of 20 so an accidental tiny value cannot wipe weeks of
+        history on the next cleanup; no upper bound. Excess backups beyond
+        the new limit are removed immediately via clean_old_backups (deferred
+        import: main imports guiqt at module load, so a top-level import
+        would be circular)."""
+        try:
+            current = int(str(read_config_file(param="backups_to_keep")))
+        except (ValueError, OSError):
+            current = 100
+        current = max(20, current)
+        value, ok = QInputDialog.getInt(
+            self,
+            self.tr("Number of backups to keep"),
+            self.tr("Keep up to this many timestamped backups (minimum 20):"),
+            current, 20, 2_147_483_647, 1,
+        )
+        if not ok:
+            return
+        write_config_file(param="backups_to_keep", value=str(value))
+        from main import clean_old_backups
+        clean_old_backups()
+        Output.print(f"Backup limit set to {value}", level="info")
+
+    def _show_help(self):
+        """Open the help window in the language currently in effect.
+        The dialog is modeless (show, not exec) so the user can keep
+        editing tasks while reading. A previously opened instance is
+        re-raised instead of being duplicated."""
+        try:
+            lang = read_config_file(param="language").strip() or "en"
+        except (ValueError, OSError):
+            lang = "en"
+        existing = getattr(self, "_help_dialog", None)
+        if existing is not None and existing.isVisible():
+            existing.raise_()
+            existing.activateWindow()
+            return
+        self._help_dialog = HelpDialog(lang, self)
+        self._help_dialog.show()
 
     def _quit(self):
         self._perform_shutdown_save()
