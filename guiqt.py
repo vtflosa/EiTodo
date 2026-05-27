@@ -3,24 +3,28 @@
 """ GUI in Qt6"""
 import os
 import re
+import sys
 import json
 import shutil
+import logging
 import datetime
+
 
 from custom_path import Path
 from general import (read_config_file, write_config_file,
                      is_empty, clean_line, clean_text, snapshot, get_raw)
 from output import Output
+from logger import Logger
 from todolist import ToDoList
 
-from PyQt6.QtGui import QFont, QIcon, QAction, QDesktopServices
+from PyQt6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QMainWindow, QPlainTextEdit, QSizePolicy, QTextEdit,
     QSystemTrayIcon, QMenu, QFileDialog, QMessageBox,
     QDialog, QDialogButtonBox, QSlider, QLineEdit, QComboBox,
 )
-from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QLocale, QTimer, QUrl, pyqtSignal
 
 _URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 
@@ -30,6 +34,23 @@ QUADRANT_KEYS = {
     "Urgent & Unimportant":     ("U&Un",  "U&Un_done"),
     "Not Urgent & Unimportant": ("NU&Un", "NU&Un_done"),
 }
+
+# Native display names for the language menu. QLocale.nativeLanguageName()
+# tends to include a country variant ("American English", "español de España")
+# so we override the common codes; unknown codes fall back to QLocale.
+_NATIVE_LANG_NAMES = {
+    "en": "English",
+    "fr": "Français",
+    "de": "Deutsch",
+    "es": "Español",
+    "it": "Italiano",
+    "pt": "Português",
+    "nl": "Nederlands",
+    "ja": "日本語",
+    "zh": "中文",
+}
+
+_QM_RE = re.compile(r"^eitodo_([a-zA-Z_]+)\.qm$")
 
 # ---------------------------------------------------------------------------
 # Backup helpers
@@ -239,12 +260,12 @@ _SIZE_MIN, _SIZE_MAX = 7, 18
 class FontPickerDialog(QDialog):
     def __init__(self, current_font: QFont, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Changer la police")
+        self.setWindowTitle(self.tr("Change font"))
         self.setMinimumWidth(380)
 
         layout = QVBoxLayout(self)
 
-        layout.addWidget(QLabel("Police :"))
+        layout.addWidget(QLabel(self.tr("Font:")))
         self._combo = QComboBox()
         for label, _ in _STANDARD_FONTS:
             self._combo.addItem(label)
@@ -259,7 +280,7 @@ class FontPickerDialog(QDialog):
         current_size = max(_SIZE_MIN, min(_SIZE_MAX, current_size))
 
         size_row = QHBoxLayout()
-        size_row.addWidget(QLabel("Taille :"))
+        size_row.addWidget(QLabel(self.tr("Size:")))
         self._slider = QSlider(Qt.Orientation.Horizontal)
         self._slider.setRange(_SIZE_MIN, _SIZE_MAX)
         self._slider.setValue(current_size)
@@ -269,8 +290,8 @@ class FontPickerDialog(QDialog):
         size_row.addWidget(self._size_edit)
         layout.addLayout(size_row)
 
-        layout.addWidget(QLabel("Aperçu :"))
-        self._preview = QLabel("• Tâche urgente et importante\n• Autre exemple de tâche")
+        layout.addWidget(QLabel(self.tr("Preview:")))
+        self._preview = QLabel(self.tr("• Urgent and important task\n• Another example task"))
         self._preview.setStyleSheet("border: 1px solid gray; padding: 6px; background: white;")
         self._preview.setWordWrap(True)
         self._preview.setMinimumHeight(60)
@@ -360,21 +381,45 @@ class MainWindow(QMainWindow):
         # System tray icon
         self._tray = QSystemTrayIcon(icon, self)
         tray_menu = QMenu()
-        clear_done_action = QAction(QIcon.fromTheme("edit-clear"), "Effacer toutes les tâches finies", self)
+        clear_done_action = QAction(QIcon.fromTheme("edit-clear"), self.tr("Clear all finished tasks"), self)
         clear_done_action.triggered.connect(self._clear_all_done)
         tray_menu.addAction(clear_done_action)
         tray_menu.addSeparator()
-        load_backup_action = QAction(QIcon.fromTheme("document-open"), "Charger une sauvegarde", self)
+        load_backup_action = QAction(QIcon.fromTheme("document-open"), self.tr("Load a backup"), self)
         load_backup_action.triggered.connect(self._load_backup)
         tray_menu.addAction(load_backup_action)
-        change_location_action = QAction(QIcon.fromTheme("folder-open"), "Changer l'emplacement des données", self)
+        change_location_action = QAction(QIcon.fromTheme("folder-open"), self.tr("Change data location"), self)
         change_location_action.triggered.connect(self._change_data_location_dialog)
         tray_menu.addAction(change_location_action)
-        change_font_action = QAction(QIcon.fromTheme("preferences-desktop-font"), "Changer la police…", self)
+        change_font_action = QAction(QIcon.fromTheme("preferences-desktop-font"), self.tr("Change font…"), self)
         change_font_action.triggered.connect(self._change_font)
         tray_menu.addAction(change_font_action)
+
+        # Language submenu — populated dynamically from translations/eitodo_*.qm
+        # plus 'en' (source language, no catalog needed). The check state
+        # mirrors config.INI's resolved 'language' (always concrete after
+        # _install_translators()). Language names are kept in their own
+        # language (convention: no tr()).
+        language_menu = QMenu(self.tr("Change language"), tray_menu)
+        language_menu.setIcon(QIcon.fromTheme("preferences-desktop-locale"))
+        try:
+            current_lang = read_config_file(param="language").strip()
+        except (ValueError, OSError):
+            current_lang = ""
+        lang_group = QActionGroup(self)
+        lang_group.setExclusive(True)
+        self._language_actions: dict[str, QAction] = {}
+        for code, label in self._discover_languages():
+            action = QAction(label, lang_group)
+            action.setCheckable(True)
+            action.setChecked(code == current_lang)
+            action.triggered.connect(lambda _checked, c=code: self._change_language(c))
+            language_menu.addAction(action)
+            self._language_actions[code] = action
+        tray_menu.addMenu(language_menu)
+
         tray_menu.addSeparator()
-        start_hidden_action = QAction("Caché au démarrage", self)
+        start_hidden_action = QAction(self.tr("Hidden at startup"), self)
         start_hidden_action.setCheckable(True)
         start_hidden_action.setChecked(read_config_file(param="start_hidden").strip().lower() == "true")
         start_hidden_action.toggled.connect(lambda checked: (
@@ -383,7 +428,7 @@ class MainWindow(QMainWindow):
         ))
         tray_menu.addAction(start_hidden_action)
         tray_menu.addSeparator()
-        quit_action = QAction(QIcon.fromTheme("application-exit"), "Quitter", self)
+        quit_action = QAction(QIcon.fromTheme("application-exit"), self.tr("Quit"), self)
         quit_action.triggered.connect(self._quit)
         tray_menu.addAction(quit_action)
         self._tray.setContextMenu(tray_menu)
@@ -501,7 +546,7 @@ class MainWindow(QMainWindow):
 
         start_dir = os.path.abspath(Path.save_folder) if Path.save_folder else ""
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Charger une sauvegarde", start_dir, "Sauvegardes JSON (*.json)"
+            self, self.tr("Load a backup"), start_dir, self.tr("JSON backups (*.json)")
         )
         if not file_path:
             return  # cancelled
@@ -509,22 +554,22 @@ class MainWindow(QMainWindow):
         data = _task_data(file_path)
         if data is None:
             QMessageBox.warning(
-                self, "Charger une sauvegarde",
-                f"Impossible de lire la sauvegarde :\n{file_path}",
+                self, self.tr("Load a backup"),
+                self.tr("Cannot read the backup:\n{0}").format(file_path),
             )
             return
 
         if self._invalid_quadrants(data):
             QMessageBox.warning(
-                self, "Charger une sauvegarde",
-                "Sauvegarde invalide : le fichier est incorrect :\n",
+                self, self.tr("Load a backup"),
+                self.tr("Invalid backup: the file is malformed:\n"),
             )
             return
 
         if QMessageBox.question(
-            self, "Charger une sauvegarde",
-            "Remplacer toutes les tâches actuelles par le contenu de\n"
-            f"{os.path.basename(file_path)} ?",
+            self, self.tr("Load a backup"),
+            self.tr("Replace all current tasks with the content of\n{0}?").format(
+                os.path.basename(file_path)),
         ) != QMessageBox.StandardButton.Yes:
             return
 
@@ -554,14 +599,13 @@ class MainWindow(QMainWindow):
 
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Emplacement des données")
-        box.setText("Où souhaitez-vous stocker les données ?")
-        box.setInformativeText(
-            "Utiliser l'emplacement par défaut, ou indiquer un fichier de "
-            "données existant ?"
-        )
-        default_btn = box.addButton("Emplacement par défaut", QMessageBox.ButtonRole.AcceptRole)
-        locate_btn = box.addButton("Indiquer l'emplacement…", QMessageBox.ButtonRole.ActionRole)
+        box.setWindowTitle(self.tr("Data location"))
+        box.setText(self.tr("Where do you want to store the data?"))
+        box.setInformativeText(self.tr(
+            "Use the default location, or point to an existing data file?"
+        ))
+        default_btn = box.addButton(self.tr("Default location"), QMessageBox.ButtonRole.AcceptRole)
+        locate_btn = box.addButton(self.tr("Pick a location…"), QMessageBox.ButtonRole.ActionRole)
         box.setDefaultButton(default_btn)
         box.exec()
 
@@ -571,20 +615,20 @@ class MainWindow(QMainWindow):
             self._use_default_data_location()
 
     def _locate_data_file_dialog(self):
-        """Startup sub-choice for 'Indiquer l'emplacement': point to an existing
+        """Startup sub-choice after 'Pick a location…': point to an existing
         data file, or create a fresh default file (example tasks) in another
         folder than the default one."""
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Emplacement des données")
-        box.setText("Indiquer l'emplacement des données")
-        box.setInformativeText(
-            "Pointer vers un fichier de données existant, ou créer un nouveau "
-            "fichier par défaut dans un autre dossier ?"
-        )
-        use_btn = box.addButton("Fichier existant…", QMessageBox.ButtonRole.AcceptRole)
-        create_btn = box.addButton("Créer un fichier par défaut…", QMessageBox.ButtonRole.ActionRole)
-        box.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+        box.setWindowTitle(self.tr("Data location"))
+        box.setText(self.tr("Pick a data location"))
+        box.setInformativeText(self.tr(
+            "Point to an existing data file, or create a new default file "
+            "in another folder?"
+        ))
+        use_btn = box.addButton(self.tr("Existing file…"), QMessageBox.ButtonRole.AcceptRole)
+        create_btn = box.addButton(self.tr("Create a default file…"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(self.tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(use_btn)
         box.exec()
 
@@ -611,7 +655,7 @@ class MainWindow(QMainWindow):
     def _ask_destination_path(self, title: str, start_path: str) -> str | None:
         """Save-as dialog for a .json data file. Returns the chosen path (with a
         .json extension and its parent folder created), or None on cancel/error."""
-        dest, _ = QFileDialog.getSaveFileName(self, title, start_path, "Fichiers JSON (*.json)")
+        dest, _ = QFileDialog.getSaveFileName(self, title, start_path, self.tr("JSON files (*.json)"))
         if not dest:
             return None
         if not dest.lower().endswith(".json"):
@@ -622,7 +666,7 @@ class MainWindow(QMainWindow):
                 os.makedirs(dest_dir, exist_ok=True)
         except OSError as e:
             QMessageBox.warning(self, title,
-                                f"Impossible de créer le dossier de destination :\n{e}")
+                                self.tr("Cannot create the destination folder:\n{0}").format(e))
             return None
         return dest
 
@@ -650,7 +694,7 @@ class MainWindow(QMainWindow):
         unused pristine startup fallback is removed afterwards."""
         old_path = Path.json_file_path
         dest = self._ask_destination_path(
-            "Créer un fichier de données",
+            self.tr("Create a data file"),
             os.path.join(Path.dir_path, self._default_json_name or "param.json"),
         )
         if dest is None:
@@ -682,15 +726,15 @@ class MainWindow(QMainWindow):
         use it) or move the current data file to a new location/name."""
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Question)
-        box.setWindowTitle("Changer l'emplacement des données")
-        box.setText("Que voulez-vous faire ?")
-        box.setInformativeText(
-            "Indiquer un fichier de données existant à utiliser, ou déplacer "
-            "le fichier actuel vers un nouvel emplacement et nom ?"
-        )
-        use_btn = box.addButton("Indiquer un fichier existant…", QMessageBox.ButtonRole.AcceptRole)
-        move_btn = box.addButton("Déplacer le fichier actuel…", QMessageBox.ButtonRole.ActionRole)
-        box.addButton("Annuler", QMessageBox.ButtonRole.RejectRole)
+        box.setWindowTitle(self.tr("Change data location"))
+        box.setText(self.tr("What do you want to do?"))
+        box.setInformativeText(self.tr(
+            "Point to an existing data file to use, or move the current "
+            "file to a new location and name?"
+        ))
+        use_btn = box.addButton(self.tr("Point to an existing file…"), QMessageBox.ButtonRole.AcceptRole)
+        move_btn = box.addButton(self.tr("Move the current file…"), QMessageBox.ButtonRole.ActionRole)
+        box.addButton(self.tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
         box.setDefaultButton(use_btn)
         box.exec()
 
@@ -703,7 +747,7 @@ class MainWindow(QMainWindow):
     def _move_data_file(self):
         """Move the current data file (keeping its content) to a new location and
         name chosen by the user, update config.INI, and keep using it."""
-        title = "Déplacer le fichier de données"
+        title = self.tr("Move the data file")
         src = Path.json_file_path
         # Snapshot + flush pending edits so the file on disk is current/recoverable.
         self._flush_editors()
@@ -720,7 +764,7 @@ class MainWindow(QMainWindow):
         try:
             shutil.move(src, dest)
         except OSError as e:
-            QMessageBox.warning(self, title, f"Échec du déplacement :\n{e}")
+            QMessageBox.warning(self, title, self.tr("Move failed:\n{0}").format(e))
             self.todolist.set_path(src)  # keep working with the original file
             return
         self._remove_data_file(src)  # src moved; clears its leftover .lock/.tmp
@@ -733,7 +777,7 @@ class MainWindow(QMainWindow):
         config.INI, then load it. Same flow whether triggered from the menu or
         at startup (first launch / missing file) — except startup skips the
         pre-backup (no valid current data to save) and the confirmation."""
-        title = "Changer l'emplacement des données"
+        title = self.tr("Change data location")
         if not at_startup:
             # Snapshot the current data first (flush pending edits to disk).
             self._flush_editors()
@@ -742,27 +786,27 @@ class MainWindow(QMainWindow):
         start_dir = (os.path.dirname(os.path.abspath(Path.json_file_path))
                      if Path.json_file_path else "")
         file_path, _ = QFileDialog.getOpenFileName(
-            self, title, start_dir, "Fichiers JSON (*.json)"
+            self, title, start_dir, self.tr("JSON files (*.json)")
         )
         if not file_path:
             return  # cancelled
 
         data = _task_data(file_path)
         if data is None:
-            QMessageBox.warning(self, title, f"Impossible de lire le fichier :\n{file_path}")
+            QMessageBox.warning(self, title, self.tr("Cannot read the file:\n{0}").format(file_path))
             return
 
         if self._invalid_quadrants(data):
             QMessageBox.warning(
                 self, title,
-                "Fichier invalide : il ne contient pas une matrice de tâches valide.",
+                self.tr("Invalid file: it does not contain a valid task matrix."),
             )
             return
 
         if not at_startup and QMessageBox.question(
             self, title,
-            "Utiliser ce fichier comme nouvel emplacement des données et "
-            f"charger son contenu ?\n\n{file_path}",
+            self.tr("Use this file as the new data location and load "
+                    "its content?\n\n{0}").format(file_path),
         ) != QMessageBox.StandardButton.Yes:
             return
 
@@ -805,13 +849,94 @@ class MainWindow(QMainWindow):
         Output.print(f"Font changed: '{self._editor_font.family()}' {self._editor_font.pointSize()}pt",
                      level="info")
 
+    @staticmethod
+    def _discover_languages() -> list[tuple[str, str]]:
+        """Scan translations/eitodo_*.qm and return a sorted (code, label)
+        list for the language menu. 'en' is always included (source language,
+        no catalog file needed). Labels come from _NATIVE_LANG_NAMES when the
+        code is known, otherwise from QLocale.nativeLanguageName() (falls
+        back to the bare code if Qt does not recognize it). Sorted by label
+        for a stable, alphabetical menu order."""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        translations_dir = os.path.join(base_dir, "translations")
+
+        codes: set[str] = {"en"}
+        if os.path.isdir(translations_dir):
+            for fname in os.listdir(translations_dir):
+                m = _QM_RE.match(fname)
+                if m:
+                    codes.add(m.group(1))
+
+        def label_for(code: str) -> str:
+            if code in _NATIVE_LANG_NAMES:
+                return _NATIVE_LANG_NAMES[code]
+            qname = QLocale(code).nativeLanguageName()
+            return (qname[0].upper() + qname[1:]) if qname else code
+
+        return sorted(((c, label_for(c)) for c in codes), key=lambda x: x[1])
+
+    def _change_language(self, code: str):
+        """Persist a new UI language and restart the app (after confirmation).
+
+        Hot-swapping a QTranslator on a running window would require every
+        widget's text to be re-applied through a retranslateUi() method,
+        which we do not have. Restarting via os.execv is fast (<1 s) and
+        the shutdown save guarantees no data loss across the swap.
+        """
+        try:
+            current = read_config_file(param="language").strip()
+        except (ValueError, OSError):
+            current = ""
+        if code == current:
+            return  # exclusive group still fires triggered on the active item
+        if QMessageBox.question(
+            self, self.tr("Change language"),
+            self.tr("Restart EiTodo to apply the new language?"),
+        ) != QMessageBox.StandardButton.Yes:
+            # Restore the check state to whatever is actually in effect.
+            if current in self._language_actions:
+                self._language_actions[current].setChecked(True)
+            return
+        write_config_file(param="language", value=code)
+        Output.print(f"UI language changed from '{current}' to '{code}' — restarting",
+                     level="info")
+        self._restart_app()
+
+    def _restart_app(self):
+        """Save state and re-exec the same interpreter and script. os.execv
+        replaces the current process, so no Qt teardown signals fire after
+        this — _perform_shutdown_save() must run explicitly first.
+
+        EITODO_LOG_CONTINUE points the next process at the current log file
+        so the new session appends to it instead of opening a fresh one,
+        avoiding the abrupt cut that os.execv would otherwise leave behind.
+
+        The logind shutdown inhibitor is released explicitly so the
+        transition is visible in the log; otherwise CLOEXEC would close
+        the dup'd lock fd silently at execv. The new process acquires its
+        own inhibitor during startup.
+
+        logging.shutdown() flushes pending writes before the process is
+        replaced (no atexit handlers run after execv).
+        """
+        if Logger.current_log_path:
+            os.environ["EITODO_LOG_CONTINUE"] = Logger.current_log_path
+        self._perform_shutdown_save()
+        inhibitor = getattr(QApplication.instance(), "_shutdown_inhibitor", None)
+        if inhibitor is not None:
+            inhibitor.release()
+        Output.print("Replacing process via os.execv — log continues below",
+                     level="info")
+        logging.shutdown()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
     def _quit(self):
         self._perform_shutdown_save()
         QApplication.quit()
 
     def _perform_shutdown_save(self):
         """Persist data and geometry exactly once, regardless of how the app is
-        being terminated: the tray 'Quitter' action, a SIGTERM, or a desktop
+        being terminated: the tray 'Quit' action, a SIGTERM, or a desktop
         session end (logout / shutdown / reboot).
 
         On X11 a session end is delivered through the X Session Management

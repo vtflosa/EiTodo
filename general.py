@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# coding: utf8
+# -*- coding: Utf-8 -*
 """ general helper functions"""
 
 # general import

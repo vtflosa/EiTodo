@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# coding: utf8
+# -*- coding: Utf-8 -*
 """ Versioning of the program"""
 
 
@@ -12,6 +12,7 @@ def version():
               "V 0.4 : cleanup logs and comments, translate in english\n"
               "V 0.5 : cleanup imports (drop unused + wildcard imports), no circular imports\n"
               "V 0.6 : added font selection\n"
-              "V 0.7 : Save param en reboot or sigterm"
+              "V 0.7 : Save param en reboot or sigterm\n"
+              "V 0.8 : translation multilingue"
               )
     return v_text.split("\n")[-1]

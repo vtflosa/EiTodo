@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# coding: utf8
+# -*- coding: Utf-8 -*
 """ main program manage Eisenhower TODO matrix
     the matrix is as follow :
         - Urgent & Important tasks/projects to be completed immediately
@@ -8,6 +8,7 @@
         - Not Urgent & Unimportant tasks/projects to be deleted or done on leisure time
         ["U&I", "U&I_done", "NU&I", "NU&I_done", "U&Un", "U&Un_done", "NU&Un", "NU&Un_done"]
 """
+
 # general imports
 import os
 import re
@@ -16,7 +17,8 @@ import signal
 import socket
 import traceback
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QObject, QSocketNotifier, pyqtSlot
+from PyQt6.QtCore import (QCoreApplication, QLibraryInfo, QLocale, QObject,
+                          QSocketNotifier, QTranslator, pyqtSlot)
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface, QDBusReply
 
 # local imports
@@ -31,11 +33,14 @@ from todolist import ToDoList
 from guiqt import MainWindow as gui
 
 
-#   todo create a linux installer and publish it on github + on install, ask whether to add it to automatic startup
+#  todo create a linux installer
+#
+#  todo     essayer install, et demander si a mettre en startup automatique
 
 # todo écrire un fichier d'aide
 
-# todo faire la traduction en anglais
+# todo vérifi install et mise à jour si nouveau fichier
+
 
 # todo tout relire pour vérifier
 
@@ -51,6 +56,8 @@ _DEFAULT_CONFIG = {
     "backups_to_keep": "100",
     "font": "DejaVu Sans",
     "font_size": "10",
+    # UI language code, e.g. 'fr', 'en'. Empty = auto-detect from system locale.
+    "language": "",
 }
 
 _DEFAULT_PATH = {
@@ -58,15 +65,72 @@ _DEFAULT_PATH = {
     "save_folder_path": "save",
     "json_file_path": "param.json"}
 
-_DEFAULT_PARAM = {
-    "version": 0,
-    "updated_at": 0.0,
-    "last_writer": "",
-    "U&I": ["Ecrire les tâches à faire"], "U&I_done": ["Ici sont les tâches réalisées"],
-    "NU&I": [], "NU&I_done": [],
-    "U&Un": [], "U&Un_done": [],
-    "NU&Un": [], "NU&Un_done": [],
-}
+def _default_param() -> dict:
+    """Default task data, built lazily so the QTranslator (installed in main())
+    is in place when the example task strings are looked up. The translate()
+    call is written out in full (not via an alias) so pylupdate6 can extract
+    these strings into the catalog."""
+    return {
+        "version": 0,
+        "updated_at": 0.0,
+        "last_writer": "",
+        "U&I":      [QCoreApplication.translate("DefaultTasks", "Write tasks to do here")],
+        "U&I_done": [QCoreApplication.translate("DefaultTasks", "Finished tasks appear here")],
+        "NU&I": [], "NU&I_done": [],
+        "U&Un": [], "U&Un_done": [],
+        "NU&Un": [], "NU&Un_done": [],
+    }
+
+
+def _install_translators(app: QApplication) -> str:
+    """Pick the UI language and install the matching QTranslator(s) on app.
+
+    Resolution order:
+      1. The 'language' code in config.INI [CONFIG], if a matching
+         eitodo_<lang>.qm catalog exists.
+      2. The system locale (QLocale.system()), if its catalog exists.
+      3. English — the source language, no catalog needed.
+
+    Loads Qt's own qtbase_<lang>.qm too so framework strings (Cancel button,
+    file-dialog chrome…) match. Translator references are kept alive by
+    attaching them to the app object.
+
+    Returns the language code that was actually applied (always concrete,
+    never empty). The caller persists it back to config.INI so the user
+    sees which language is in effect.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    translations_dir = os.path.join(base_dir, "translations")
+
+    try:
+        requested = str(read_config_file(param="language")).strip()
+    except (ValueError, OSError):
+        requested = ""
+
+    sys_name = QLocale.system().name()  # e.g. 'fr_FR' or '' if undefined
+    sys_lang = sys_name.split("_")[0] if sys_name else ""
+
+    # Ordered, deduplicated candidates: explicit choice first, then system.
+    candidates: list[str] = []
+    for c in (requested, sys_lang):
+        if c and c not in candidates:
+            candidates.append(c)
+
+    for lang in candidates:
+        if lang == "en":
+            return "en"  # English source — no catalog needed
+        app_translator = QTranslator(app)
+        if app_translator.load(f"eitodo_{lang}", translations_dir):
+            app.installTranslator(app_translator)
+            app._eitodo_translator = app_translator  # prevent GC
+            qt_translator = QTranslator(app)
+            qt_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+            if qt_translator.load(f"qtbase_{lang}", qt_path):
+                app.installTranslator(qt_translator)
+                app._qtbase_translator = qt_translator  # prevent GC
+            return lang
+
+    return "en"
 
 
 def set_and_check_paths() -> bool:
@@ -151,7 +215,7 @@ def first_launch() -> bool:
     # do not overwrite param.json if it already exists
     if not os.path.isfile(Path.json_file_path):
         with open(Path.json_file_path, "w", encoding="utf8") as f:
-            json.dump(_DEFAULT_PARAM, f, indent=4)
+            json.dump(_default_param(), f, indent=4)
 
     write_config_file_menu(menu="CONFIG", data=_DEFAULT_CONFIG)
     write_config_file_menu(menu="PATH", data=_DEFAULT_PATH)
@@ -236,15 +300,45 @@ class ShutdownInhibitor(QObject):
 
 def main():
 
+    # QApplication and translators must exist before first_launch(): the
+    # default-task strings written into the initial param.json go through
+    # QCoreApplication.translate() via _default_param(), and that lookup
+    # only finds anything once a QTranslator is installed.
+    app = QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    resolved_lang = _install_translators(app)
+
     # first_launch() creates the config file and working folders; only then can
     # set_and_check_paths() resolve Path.log_folder for the logger below.
     first_launch_start = first_launch()
     json_exists = set_and_check_paths()
 
     # Start logging as early as the paths allow, so every event below (including
-    # the first-launch notice) is captured in the log file.
-    log = Log(Path.log_folder, 20)
+    # the first-launch notice) is captured in the log file. EITODO_LOG_CONTINUE
+    # is set by _restart_app() before os.execv so the new process appends to
+    # the previous process's log; we pop it so an unrelated next launch starts
+    # a fresh file.
+    continue_log = os.environ.pop("EITODO_LOG_CONTINUE", None)
+    log = Log(Path.log_folder, 20, continue_from=continue_log)
     Output.print(version())
+
+    # Always log the active UI language at startup so the log file documents
+    # which language the user actually sees, even when no fallback was needed.
+    # Persist the resolved value to config.INI only when it differs from what
+    # was requested (auto-detect, or fallback for a missing catalog).
+    try:
+        requested = str(read_config_file(param="language")).strip()
+    except (ValueError, OSError):
+        requested = ""
+    req_display = requested if requested else "(auto)"
+    Output.print(f"UI language: requested='{req_display}', resolved='{resolved_lang}'",
+                 level="info")
+    if requested != resolved_lang:
+        try:
+            write_config_file(param="language", value=resolved_lang)
+        except (ValueError, OSError):
+            pass
+
     if first_launch_start:
         Output.print("First launch: working folders and default data file created",
                      level="info")
@@ -267,7 +361,7 @@ def main():
         prompt_data_location = first_launch_start or not json_exists
 
         Output.print(f"Loading data: {Path.json_file_path}", level="info")
-        todolist = ToDoList(Path.json_file_path, default_data=_DEFAULT_PARAM)
+        todolist = ToDoList(Path.json_file_path, default_data=_default_param())
         debounce_ms  = int(str(read_config_file(param="debounce_ms")))
         win_width    = int(str(read_config_file(param="window_width")))
         win_height   = int(str(read_config_file(param="window_height")))
@@ -286,8 +380,6 @@ def main():
             font_size = int(_DEFAULT_CONFIG["font_size"])
             write_config_file(param="font_size", value=_DEFAULT_CONFIG["font_size"])
 
-        app = QApplication([])
-        app.setQuitOnLastWindowClosed(False)
         window = gui(todolist=todolist, debounce_ms=debounce_ms,
                      width=win_width, height=win_height,
                      x=win_x, y=win_y, screen_name=win_screen,
@@ -303,7 +395,7 @@ def main():
         #
         #   1. systemd-logind delay inhibitor  -> reboot / shutdown / poweroff
         #   2. XSMP commitDataRequest          -> graphical logout (X11)
-        #      + aboutToQuit                    -> tray "Quitter" and any other exit
+        #      + aboutToQuit                    -> tray "Quit" and any other exit
         #   3. SIGTERM / SIGHUP                 -> `kill`, non-graphical termination
         #
         # Layer 1 is the one that actually fires on a real reboot: logind kills
@@ -312,8 +404,12 @@ def main():
         # the "Param backup:" log line, so the messages below only name the route.
 
         # 1. logind delay inhibitor (primary reboot/shutdown path). Keep the
-        # reference so it is not garbage-collected while the app runs.
+        # reference so it is not garbage-collected while the app runs, and
+        # expose it on the app so the language-change restart in guiqt can
+        # release it explicitly before os.execv (CLOEXEC would also release
+        # it silently, but the explicit call logs the transition).
         inhibitor = ShutdownInhibitor(window._perform_shutdown_save)
+        app._shutdown_inhibitor = inhibitor
 
         # 2. Graphical session end. Under X11 a logout is delivered via the X
         # Session Management Protocol, not as a signal: Qt emits commitDataRequest

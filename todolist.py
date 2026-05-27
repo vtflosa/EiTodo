@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# coding: utf8
+# -*- coding: Utf-8 -*
 
 """ todolist class to manage the eisenhower todolist
 

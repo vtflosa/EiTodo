@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# coding: utf8
+# -*- coding: Utf-8 -*
 """ Handle the print wherever we want it
 
     Prevent from crash when print should be updated from different threads
