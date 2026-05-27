@@ -11,4 +11,6 @@ SOURCES = main.py \
           custom_path.py \
           version.py
 
-TRANSLATIONS = translations/eitodo_fr.ts
+TRANSLATIONS = translations/eitodo_fr.ts \
+               translations/eitodo_de.ts \
+               translations/eitodo_es.ts
