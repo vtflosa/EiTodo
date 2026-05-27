@@ -68,6 +68,13 @@ fichiers (Dropbox, MEGA, Nextcloud, Syncthing, Google Drive,
 etc.) pour partager la même matrice entre plusieurs
 ordinateurs.
 
+Vous pouvez aussi placer le fichier dans un dossier partagé du
+réseau local — un partage NAS (Samba/NFS) ou tout autre dossier
+monté sur chaque machine. Sur un réseau local, les mises à jour
+se propagent quasi instantanément : une modification faite sur
+un ordinateur apparaît sur les autres en moins d'une seconde,
+sans passer par un service cloud.
+
 Mise en place :
 
 1. Placez le fichier de données dans un dossier synchronisé —

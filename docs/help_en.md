@@ -58,6 +58,12 @@ file-synchronisation service (Dropbox, MEGA, Nextcloud, Syncthing,
 Google Drive, etc.) is enough to share the same matrix between
 several computers.
 
+Alternatively, you can place the file on a folder shared across
+the local network — a NAS share (Samba/NFS) or any other share
+mounted on every machine. On a LAN, updates propagate almost
+instantly: an edit on one computer appears on the others within
+a second, without any cloud round-trip.
+
 Setup:
 
 1. Put the data file inside a synced folder — for example via
