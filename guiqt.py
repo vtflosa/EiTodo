@@ -16,6 +16,7 @@ from general import (read_config_file, write_config_file,
 from output import Output
 from logger import Logger
 from todolist import ToDoList
+from version import version_nb
 
 from PyQt6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices
 from PyQt6.QtWidgets import (
@@ -419,6 +420,13 @@ class MainWindow(QMainWindow):
         # System tray icon
         self._tray = QSystemTrayIcon(icon, self)
         tray_menu = QMenu()
+        # Header: app name + version, disabled (informational only). The app
+        # name and the 'V' marker are not localised — they read the same in
+        # every language and match the version() string in the log.
+        version_action = QAction(f"EiTodo V {version_nb()}", self)
+        version_action.setEnabled(False)
+        tray_menu.addAction(version_action)
+        tray_menu.addSeparator()
         clear_done_action = QAction(QIcon.fromTheme("edit-clear"), self.tr("Clear all finished tasks"), self)
         clear_done_action.triggered.connect(self._clear_all_done)
         tray_menu.addAction(clear_done_action)

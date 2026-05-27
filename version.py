@@ -3,6 +3,14 @@
 """ Versioning of the program"""
 
 
+def version_nb() -> str:
+    """Return just the version number of the latest entry, e.g. '1.2' or
+    '4.6.8'. Parses the line returned by version(), which is shaped
+    'V X[.Y[.Z]] : description'."""
+    parts = version().split(maxsplit=2)
+    return parts[1] if len(parts) >= 2 else ""
+
+
 def version():
     """this function return only the last line. Add \n to the previous line"""
     v_text = ("V 0.0 : building structure of the project\n"
@@ -17,6 +25,7 @@ def version():
               "V 0.9 : in-app help dialog + menu to set backup retention limit\n"
               "V 1.0 : public release — installer hardening, autostart prompt, README\n"
               "V 1.1 : German and Spanish UI + help translations\n"
-              "V 1.2 : docs corrected — cloud sync only, direct network shares not recommended"
+              "V 1.2 : docs corrected — cloud sync only, direct network shares not recommended\n"
+              "V 1.3 : version number shown in tray menu header + update instructions in README"
               )
     return v_text.split("\n")[-1]

@@ -36,6 +36,18 @@ L'installateur demande au démarrage :
 
 Il télécharge le code, installe les dépendances système nécessaires (`python3.X-venv`, `python3-pip`, `libxcb-cursor0`), crée un environnement virtuel Python, installe PyQt6 et `watchdog`, puis met en place un raccourci dans le menu des applications et sur le bureau.
 
+### Mise à jour
+
+Pour passer à une nouvelle version, il suffit de relancer l'installateur :
+
+```bash
+bash install_EiTodo.sh
+```
+
+Le script récupère la dernière version depuis GitHub. **Vos données, sauvegardes et préférences sont conservées** : le `.gitignore` du dépôt exclut `config.INI`, `param.json`, `logs/` et `save/`, donc l'archive téléchargée ne les contient pas et la décompression ne les écrase pas. L'environnement Python est reconstruit proprement (`venv --clear`) et les dépendances réinstallées.
+
+L'installateur reposera la question de l'autostart au démarrage : vous pouvez confirmer ou changer votre choix précédent.
+
 ### Utilisation
 
 #### La matrice d'Eisenhower
@@ -150,6 +162,18 @@ At the start the installer asks:
 2. **Install only** — launch manually from the applications menu.
 
 It downloads the code, installs the required system packages (`python3.X-venv`, `python3-pip`, `libxcb-cursor0`), creates a Python virtual environment, installs PyQt6 and `watchdog`, and registers a shortcut in the applications menu and on the desktop.
+
+### Updating
+
+To switch to a new version, just re-run the installer:
+
+```bash
+bash install_EiTodo.sh
+```
+
+The script fetches the latest version from GitHub. **Your data, backups and preferences are preserved**: the repository's `.gitignore` excludes `config.INI`, `param.json`, `logs/` and `save/`, so the downloaded archive does not contain them and the extraction does not overwrite them. The Python environment is rebuilt cleanly (`venv --clear`) and dependencies reinstalled.
+
+The installer will prompt again about autostart at the start — you can confirm or change your previous choice.
 
 ### Usage
 
