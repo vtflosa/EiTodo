@@ -35,7 +35,8 @@ class Output:
 
         logger = logging.getLogger()
         # Print the text in the logging file if a logger has been instantiated
-        if str(logger) != "<RootLogger root (WARNING)>":  # a logger has been instantiated
+
+        if logger.hasHandlers():  # a logger has been instantiated
             if level.upper() == "INFO":
                 logging.info(text)
             elif level.upper() == "WARNING":

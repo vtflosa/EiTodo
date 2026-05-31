@@ -6,28 +6,32 @@ import re
 import sys
 import json
 import shutil
+import difflib
 import logging
 import datetime
 
 
 from custom_path import Path
 from general import (read_config_file, write_config_file,
-                     is_empty, clean_line, clean_text, snapshot, get_raw)
+                     is_empty, clean_line, clean_text, snapshot, get_raw,
+                     URL_RE)
 from output import Output
 from logger import Logger
 from todolist import ToDoList
 from version import version_nb
 
-from PyQt6.QtGui import QFont, QIcon, QAction, QActionGroup, QDesktopServices
+from PyQt6.QtGui import (
+    QFont, QIcon, QAction, QActionGroup, QDesktopServices,
+    QPainter, QPolygon,
+)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
     QMainWindow, QPlainTextEdit, QSizePolicy, QTextEdit, QTextBrowser,
-    QSystemTrayIcon, QMenu, QFileDialog, QMessageBox, QInputDialog,
+    QSystemTrayIcon, QMenu, QFileDialog, QMessageBox,
     QDialog, QDialogButtonBox, QSlider, QLineEdit, QComboBox,
+    QCheckBox, QSpinBox, QStyle,
 )
-from PyQt6.QtCore import Qt, QLocale, QTimer, QUrl, pyqtSignal
-
-_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+from PyQt6.QtCore import Qt, QLocale, QTimer, QUrl, QPoint, pyqtSignal
 
 QUADRANT_KEYS = {
     "Urgent & Important":       ("U&I",   "U&I_done"),
@@ -35,6 +39,13 @@ QUADRANT_KEYS = {
     "Urgent & Unimportant":     ("U&Un",  "U&Un_done"),
     "Not Urgent & Unimportant": ("NU&Un", "NU&Un_done"),
 }
+
+# Reverse lookups for the right-click menus (move to other quadrant, etc.)
+_ACTIVE_LOCS = [loc for loc, _ in QUADRANT_KEYS.values()]
+_LOC_TO_DISPLAY = {loc: display for display, (loc, _) in QUADRANT_KEYS.items()}
+_LOC_TO_DONE = dict(QUADRANT_KEYS.values())
+_DONE_TO_LOC = {done: loc for loc, done in QUADRANT_KEYS.values()}
+_DONE_LIMIT = 10  # max items kept in any "done" quadrant
 
 # Native display names for the language menu. QLocale.nativeLanguageName()
 # tends to include a country variant ("American English", "español de España")
@@ -86,7 +97,9 @@ def _latest_backup(save_folder: str, name: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 class TrackedTextEdit(QPlainTextEdit):
-    items_erased = pyqtSignal(list)  # list of raw items fully removed from the text
+    items_erased = pyqtSignal(list)        # raw items removed by typing/deletion
+    mark_done_requested = pyqtSignal(str)  # raw item → move to corresponding _done
+    move_to_requested = pyqtSignal(str, str)  # raw item, target active loc
 
     def __init__(self, todolist: ToDoList, loc: str, debounce_ms: int, parent=None):
         super().__init__(parent)
@@ -111,31 +124,52 @@ class TrackedTextEdit(QPlainTextEdit):
 
     def _flush(self):
         text = self.toPlainText()
-        cleaned = clean_text(text)
-        if cleaned != text:
-            cursor = self.textCursor()
-            block_num = cursor.blockNumber()
-            col = cursor.positionInBlock()
-            raw_lines = text.splitlines()
+        cursor = self.textCursor()
+        block_num = cursor.blockNumber()
+        col = cursor.positionInBlock()
+        raw_lines = text.splitlines()
 
-            # Map block_num in raw text → block_num in cleaned text (empty lines removed)
-            new_block_num = sum(1 for l in raw_lines[:block_num] if not is_empty(l))
-
-            # Map column: raw line has variable prefix, cleaned line always starts with "• "
-            new_col = 2  # fallback: just after "• "
-            if block_num < len(raw_lines):
-                raw_line = raw_lines[block_num]
-                if not is_empty(raw_line):
-                    s = raw_line.lstrip()
-                    leading = len(raw_line) - len(s)
+        # Reformat lines, but if the cursor sits on an empty line (the user
+        # just pressed Enter to start a new item) keep it as a "• " placeholder
+        # so the cursor stays on a fresh bullet instead of being yanked into
+        # the next existing item.
+        cleaned_lines: list[str] = []
+        new_block_num = 0
+        new_col = 0
+        cursor_placed = False
+        for i, line in enumerate(raw_lines):
+            is_cursor_line = (i == block_num)
+            if is_empty(line):
+                if is_cursor_line:
+                    cleaned_lines.append("• ")
+                    new_block_num = len(cleaned_lines) - 1
+                    new_col = 2
+                    cursor_placed = True
+            else:
+                cleaned_lines.append(clean_line(line))
+                if is_cursor_line:
+                    s = line.lstrip()
                     after_bullet = s[1:].lstrip() if s.startswith("•") else s
-                    content_start = len(raw_line) - len(after_bullet)
+                    content_start = len(line) - len(after_bullet)
                     content_col = max(0, col - content_start)
-                    new_col = 2 + content_col  # "• " prefix is always 2 chars
+                    new_block_num = len(cleaned_lines) - 1
+                    new_col = 2 + content_col
+                    cursor_placed = True
+        if not cursor_placed and raw_lines and block_num >= len(raw_lines):
+            # Cursor on a phantom empty block past the last raw line (Enter at
+            # the very end of the text). Preserve as a "• " placeholder too.
+            cleaned_lines.append("• ")
+            new_block_num = len(cleaned_lines) - 1
+            new_col = 2
+            cursor_placed = True
+        if not cursor_placed:
+            new_block_num = max(0, len(cleaned_lines) - 1)
+            new_col = 0
+        cleaned = ("\n".join(cleaned_lines) + "\n") if cleaned_lines else ""
 
+        if cleaned != text:
             self.blockSignals(True)
             self.setPlainText(cleaned)
-
             block = self.document().findBlockByNumber(new_block_num)
             if not block.isValid():
                 block = self.document().lastBlock()
@@ -144,34 +178,38 @@ class TrackedTextEdit(QPlainTextEdit):
             new_cursor.setPosition(block.position() + new_col)
             self.setTextCursor(new_cursor)
             self.blockSignals(False)
+
         current = snapshot(self.toPlainText())
         if current != self._snap:
-            current_vals = set(current.values())
-            appeared = list(set(current.values()) - set(self._snap.values()))
-            # Gone items ordered by original position (first line = most likely edited)
-            gone_ordered = [v for _, v in sorted(
-                (pos, val) for pos, val in self._snap.items() if val not in current_vals
-            )]
-            if gone_ordered:
-                # Greedily pair gone items with appeared items via prefix relation (= edit)
-                remaining = list(appeared)
-                truly_erased = []
-                for g in gone_ordered:
-                    match = next((a for a in remaining if g.startswith(a) or a.startswith(g)), None)
-                    if match is not None:
-                        remaining.remove(match)
-                    else:
-                        truly_erased.append(g)
-                raw_erased = [get_raw(line)[0] for line in truly_erased if get_raw(line)]
-                if raw_erased:
-                    self.items_erased.emit(raw_erased)
+            # Detect erasures via line-level diff. Same-count `replace` ops are
+            # in-place edits (typing mid-line) and must NOT count as erasures;
+            # only `delete` ops and the surplus of an oversized `replace` are
+            # truly removed items. Items still present elsewhere in the new
+            # text (reorders) are filtered out.
+            old_lines = [v for _, v in sorted(self._snap.items())]
+            new_lines = [v for _, v in sorted(current.items())]
+            new_set = set(new_lines)
+            truly_erased: list[str] = []
+            sm = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+            for tag, i1, i2, j1, j2 in sm.get_opcodes():
+                if tag == "delete":
+                    truly_erased.extend(item for item in old_lines[i1:i2]
+                                        if item not in new_set)
+                elif tag == "replace":
+                    paired = j2 - j1
+                    for item in old_lines[i1 + paired:i2]:
+                        if item not in new_set:
+                            truly_erased.append(item)
+            raw_erased = [get_raw(line)[0] for line in truly_erased if get_raw(line)]
+            if raw_erased:
+                self.items_erased.emit(raw_erased)
             self.todolist.set_quadrant(self.loc, get_raw(self.toPlainText()))
         self._snap = current
 
     def mousePressEvent(self, event):
         """Ctrl+click on a URL opens it instead of moving the cursor."""
         if (event.button() == Qt.MouseButton.LeftButton
-                and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                and Qt.KeyboardModifier.ControlModifier in event.modifiers()):
             url = self._url_at(self.cursorForPosition(event.position().toPoint()))
             if url:
                 QDesktopServices.openUrl(QUrl(url))
@@ -181,19 +219,92 @@ class TrackedTextEdit(QPlainTextEdit):
     def mouseMoveEvent(self, event):
         """Track the cursor position and update the link-hover cursor."""
         self._last_mouse_pos = event.position().toPoint()
-        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        ctrl = Qt.KeyboardModifier.ControlModifier in event.modifiers()
         self._update_link_cursor(ctrl)
         super().mouseMoveEvent(event)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Control:
             self._update_link_cursor(True)
+        if Qt.KeyboardModifier.ControlModifier in event.modifiers():
+            if event.key() == Qt.Key.Key_Up:
+                self._move_line(-1)
+                return
+            if event.key() == Qt.Key.Key_Down:
+                self._move_line(+1)
+                return
         super().keyPressEvent(event)
 
     def keyReleaseEvent(self, event):
         if event.key() == Qt.Key.Key_Control:
             self._update_link_cursor(False)
         super().keyReleaseEvent(event)
+
+    def _move_line(self, direction: int, block_num: int | None = None):
+        """Swap the non-empty line at block_num with the closest non-empty line
+        in `direction` (-1 up, +1 down). The text change is debounced and
+        ultimately persisted by _flush; SequenceMatcher sees the swap as a
+        delete+insert pair whose values are still present, so nothing is
+        wrongly routed to the done panel."""
+        cursor = self.textCursor()
+        if block_num is None:
+            block_num = cursor.blockNumber()
+        lines = self.toPlainText().split("\n")
+        if not (0 <= block_num < len(lines)) or is_empty(lines[block_num]):
+            return
+        target = block_num + direction
+        while 0 <= target < len(lines) and is_empty(lines[target]):
+            target += direction
+        if not (0 <= target < len(lines)):
+            return
+        lines[block_num], lines[target] = lines[target], lines[block_num]
+        self.setPlainText("\n".join(lines))
+        new_block = self.document().findBlockByNumber(target)
+        if new_block.isValid():
+            new_cursor = self.textCursor()
+            new_cursor.setPosition(new_block.position())
+            self.setTextCursor(new_cursor)
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        cursor = self.cursorForPosition(event.pos())
+        line_text = cursor.block().text()
+        raw_items = get_raw(line_text)
+        raw = raw_items[0] if raw_items else None
+
+        if raw:
+            menu.addSeparator()
+
+            url = self._url_at(cursor)
+            if url:
+                act_url = menu.addAction(self.tr("Open link: {}").format(url))
+                act_url.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+                menu.addSeparator()
+
+            block_num = cursor.blockNumber()
+            act_up = menu.addAction(self.tr("Move up\tCtrl+Up"))
+            act_up.triggered.connect(lambda: self._move_line(-1, block_num))
+            act_down = menu.addAction(self.tr("Move down\tCtrl+Down"))
+            act_down.triggered.connect(lambda: self._move_line(+1, block_num))
+
+            menu.addSeparator()
+
+            act_done = menu.addAction(self.tr("Mark as done"))
+            act_done.triggered.connect(lambda: self.mark_done_requested.emit(raw))
+
+            move_menu = menu.addMenu(self.tr("Move to quadrant"))
+            for other_loc in _ACTIVE_LOCS:
+                if other_loc == self.loc:
+                    continue
+                # `&` in QAction text is the mnemonic prefix; double it to show
+                # a literal ampersand in "Urgent & Important" etc.
+                label = self.tr(_LOC_TO_DISPLAY[other_loc]).replace("&", "&&")
+                act = move_menu.addAction(label)
+                act.triggered.connect(
+                    lambda _, t=other_loc, r=raw: self.move_to_requested.emit(r, t)
+                )
+
+        menu.exec(event.globalPos())
 
     def _update_link_cursor(self, ctrl_held: bool):
         """Show a pointing-hand cursor when Ctrl is held over a URL at the last
@@ -209,7 +320,7 @@ class TrackedTextEdit(QPlainTextEdit):
 
     def _url_at(self, cursor) -> str | None:
         """Return the URL of the whitespace-delimited token under the cursor,
-        or None if it is not a link. 'www.' tokens get an http:// scheme."""
+        or None if it is not a link. 'www.' tokens get an https:// scheme."""
         text = cursor.block().text()
         pos = cursor.positionInBlock()
         if not text:
@@ -220,13 +331,70 @@ class TrackedTextEdit(QPlainTextEdit):
         end = pos
         while end < len(text) and not text[end].isspace():
             end += 1
-        match = _URL_RE.search(text[start:end])
+        match = URL_RE.search(text[start:end])
         if not match:
             return None
         url = match.group(0).rstrip(".,;:!?)]}>\"'")
         if url.lower().startswith("www."):
-            url = "http://" + url
+            url = "https://" + url
         return url
+
+
+# ---------------------------------------------------------------------------
+# Done panel — read-only widget with strikethrough items and a context menu
+# ---------------------------------------------------------------------------
+
+class DoneTextEdit(QTextEdit):
+    restore_requested = pyqtSignal(str)        # raw item → back to its active loc
+    restore_to_requested = pyqtSignal(str, str)  # raw item, target active loc
+    delete_requested = pyqtSignal(str)         # raw item → permanent removal
+
+    def __init__(self, loc_done: str, parent=None):
+        super().__init__(parent)
+        self.loc_done = loc_done
+        self._items: list[str] = []
+        self.setReadOnly(True)
+
+    def set_items(self, items: list[str]):
+        """Render items as one strikethrough block per item so blockNumber
+        maps directly to the item index (used by the right-click menu)."""
+        self._items = [item for item in items if item]
+        html = "".join(
+            f"<div style='margin:0;padding:0;'><s>{clean_line(item)}</s></div>"
+            for item in self._items
+        )
+        self.setHtml(html)
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        cursor = self.cursorForPosition(event.pos())
+        block_num = cursor.blockNumber()
+        if 0 <= block_num < len(self._items):
+            item = self._items[block_num]
+            menu.addSeparator()
+
+            act_restore = menu.addAction(self.tr("Restore to active list"))
+            act_restore.triggered.connect(lambda: self.restore_requested.emit(item))
+
+            restore_menu = menu.addMenu(self.tr("Restore to quadrant"))
+            from_loc = _DONE_TO_LOC.get(self.loc_done, "")
+            for other_loc in _ACTIVE_LOCS:
+                if other_loc == from_loc:
+                    continue
+                # `&` in QAction text is the mnemonic prefix; double it for a
+                # literal ampersand in the quadrant label.
+                label = self.tr(_LOC_TO_DISPLAY[other_loc]).replace("&", "&&")
+                act = restore_menu.addAction(label)
+                act.triggered.connect(
+                    lambda _, t=other_loc, it=item: self.restore_to_requested.emit(it, t)
+                )
+
+            menu.addSeparator()
+
+            act_del = menu.addAction(self.tr("Delete permanently"))
+            act_del.triggered.connect(lambda: self.delete_requested.emit(item))
+
+        menu.exec(event.globalPos())
 
 
 # ---------------------------------------------------------------------------
@@ -298,9 +466,9 @@ class FontPickerDialog(QDialog):
         self._preview.setMinimumHeight(60)
         layout.addWidget(self._preview)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox()
+        buttons.addButton(QDialogButtonBox.StandardButton.Ok)
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -371,6 +539,34 @@ class HelpDialog(QDialog):
         layout.addWidget(buttons)
 
 
+# A thin strip drawn under a horizontal QSlider that marks one "default" value
+# with a small upward triangle. The x position is derived from the slider's own
+# style metrics, so it stays aligned with the handle steps across resizes and
+# themes. Sibling of the slider in the same layout column (same width).
+class SliderDefaultMarker(QWidget):
+    def __init__(self, slider: QSlider, value: int, parent=None):
+        super().__init__(parent)
+        self._slider = slider
+        self._value = value
+        self.setFixedHeight(7)
+
+    def paintEvent(self, event):
+        slider = self._slider
+        style = slider.style()
+        handle = style.pixelMetric(QStyle.PixelMetric.PM_SliderLength, None, slider)
+        span = max(1, slider.width() - handle)
+        pos = style.sliderPositionFromValue(
+            slider.minimum(), slider.maximum(), self._value, span)
+        cx = handle // 2 + pos
+        h = self.height()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.palette().mid())
+        painter.drawPolygon(QPolygon([
+            QPoint(cx, 0), QPoint(cx - h, h), QPoint(cx + h, h)]))
+
+
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
@@ -382,12 +578,12 @@ class MainWindow(QMainWindow):
                  width: int = 1000, height: int = 1000,
                  x: int = 0, y: int = 0, screen_name: str = "",
                  prompt_data_location: bool = False, default_json_name: str = "",
-                 font: str = "", font_size: int = 11):
+                 font: str = "DejaVu Sans", font_size: int = 10):
         super().__init__()
         self.todolist = todolist
         self._debounce_ms = debounce_ms
         self._editors: dict[str, TrackedTextEdit] = {}
-        self._done_widgets: dict[str, QTextEdit] = {}
+        self._done_widgets: dict[str, DoneTextEdit] = {}
         # Relative default data path persisted when the user keeps the default
         # location (single source of truth: main._DEFAULT_PATH).
         self._default_json_name = default_json_name
@@ -406,7 +602,7 @@ class MainWindow(QMainWindow):
             target_screen = QApplication.primaryScreen()
 
         sg = target_screen.geometry()
-        clamped_x = max(sg.x(), min(x, sg.x() + sg.width()  - width))
+        clamped_x = max(sg.x(), min(x, sg.x() + sg.width() - width))
         clamped_y = max(sg.y(), min(y, sg.y() + sg.height() - height))
         self.setGeometry(clamped_x, clamped_y, width, height)
 
@@ -418,6 +614,28 @@ class MainWindow(QMainWindow):
         self.setWindowFlag(Qt.WindowType.Tool)
 
         # System tray icon
+        self._build_tray_icon(icon)
+
+        # Route remote-file changes (background thread) safely to the main thread
+        todolist.set_on_remote_change(self._remote_change.emit)
+        self._remote_change.connect(self._on_remote_file_change)
+
+        # Hourly backup: writes a new param backup, or just refreshes the
+        # timestamp of the last one when nothing changed (see _backup_param).
+        self._backup_timer = QTimer(self)
+        self._backup_timer.setInterval(60 * 60 * 1000)  # 1 hour
+        self._backup_timer.timeout.connect(self._hourly_backup)
+        self._backup_timer.start()
+
+        self._build_quadrants(font, font_size)
+
+        # First launch or a missing data file: once the event loop is running,
+        # ask where to store data (same flow as changing the location manually).
+        if prompt_data_location:
+            QTimer.singleShot(0, self._prompt_data_location)
+
+    def _build_tray_icon(self, icon: QIcon):
+        """Build the system tray icon and its context menu."""
         self._tray = QSystemTrayIcon(icon, self)
         tray_menu = QMenu()
         # Header: app name + version, disabled (informational only). The app
@@ -438,12 +656,21 @@ class MainWindow(QMainWindow):
                                       self.tr("Number of backups to keep…"), self)
         backup_limit_action.triggered.connect(self._change_backup_limit)
         tray_menu.addAction(backup_limit_action)
-        change_location_action = QAction(QIcon.fromTheme("folder-open"), self.tr("Change data location"), self)
-        change_location_action.triggered.connect(self._change_data_location_dialog)
-        tray_menu.addAction(change_location_action)
+        open_backups_action = QAction(QIcon.fromTheme("folder-open"),
+                                      self.tr("Open backups folder"), self)
+        open_backups_action.triggered.connect(
+            lambda: self._open_folder(Path.save_folder))
+        tray_menu.addAction(open_backups_action)
+        data_location_action = QAction(QIcon.fromTheme("folder-open"), self.tr("Data location…"), self)
+        data_location_action.triggered.connect(self._show_data_location)
+        tray_menu.addAction(data_location_action)
         change_font_action = QAction(QIcon.fromTheme("preferences-desktop-font"), self.tr("Change font…"), self)
         change_font_action.triggered.connect(self._change_font)
         tray_menu.addAction(change_font_action)
+        responsiveness_action = QAction(QIcon.fromTheme("preferences-system"),
+                                        self.tr("Interface responsiveness…"), self)
+        responsiveness_action.triggered.connect(self._change_debounce)
+        tray_menu.addAction(responsiveness_action)
 
         # Language submenu — populated dynamically from translations/eitodo_*.qm
         # plus 'en' (source language, no catalog needed). The check state
@@ -489,22 +716,15 @@ class MainWindow(QMainWindow):
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
 
-        # Route remote-file changes (background thread) safely to the main thread
-        todolist.set_on_remote_change(self._remote_change.emit)
-        self._remote_change.connect(self._on_remote_file_change)
-
-        # Hourly backup: writes a new param backup, or just refreshes the
-        # timestamp of the last one when nothing changed (see _backup_param).
-        self._backup_timer = QTimer(self)
-        self._backup_timer.setInterval(60 * 60 * 1000)  # 1 hour
-        self._backup_timer.timeout.connect(self._hourly_backup)
-        self._backup_timer.start()
+    def _build_quadrants(self, font: str, font_size: int):
+        """Build the central widget holding the four Eisenhower quadrants."""
+        todolist = self.todolist
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
 
         main_layout = QVBoxLayout(central_widget)
-        top_row    = QHBoxLayout()
+        top_row = QHBoxLayout()
         bottom_row = QHBoxLayout()
         main_layout.addLayout(top_row)
         main_layout.addLayout(bottom_row)
@@ -522,8 +742,16 @@ class MainWindow(QMainWindow):
             loc, loc_done = QUADRANT_KEYS[key]
 
             square = QWidget()
+            square.setObjectName("quadrantSquare")
             square.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            square.setStyleSheet(f"QWidget {{ border: 2px solid gray; background-color: {color}; padding: 8px; }}")
+            # Scope to the square itself via the object name: a bare `QWidget`
+            # selector cascades into every QWidget descendant — including the
+            # QMenu instances that pop up for right-clicks, which then inherit
+            # the colored background and become unreadable on hover.
+            square.setStyleSheet(
+                f"#quadrantSquare {{ border: 2px solid gray; "
+                f"background-color: {color}; padding: 8px; }}"
+            )
             square_layout = QVBoxLayout(square)
 
             label = QLabel(title)
@@ -533,40 +761,102 @@ class MainWindow(QMainWindow):
 
             editor = TrackedTextEdit(todolist, loc, self._debounce_ms)
             editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            editor.setStyleSheet("border: 1px solid gray; background-color: white;")
+            # Class-scoped: without a selector the rules would leak into the
+            # context QMenu (parented to the editor) and make hovered items
+            # show white text on white background.
+            editor.setStyleSheet("QPlainTextEdit { border: 1px solid gray; background-color: white; }")
             editor.setFont(self._editor_font)
             editor.set_content(todolist.todolist_dict.get(loc, []))
             self._editors[loc] = editor
 
-            done_widget = QTextEdit()
+            done_widget = DoneTextEdit(loc_done)
             done_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            done_widget.setStyleSheet("border: 1px solid gray; background-color: white;")
+            # Class-scoped — same reason as the editor above.
+            done_widget.setStyleSheet("QTextEdit { border: 1px solid gray; background-color: white; }")
             done_widget.setFont(self._editor_font)
-            done_widget.setReadOnly(True)
-            self._fill_done_widget(done_widget, todolist.todolist_dict.get(loc_done, []))
+            done_widget.set_items(todolist.todolist_dict.get(loc_done, []))
             self._done_widgets[loc_done] = done_widget
 
             editor.items_erased.connect(
                 lambda items, ld=loc_done, dw=done_widget: self._on_erased(ld, dw, items)
+            )
+            editor.mark_done_requested.connect(
+                lambda item, src=loc: self._on_mark_done(src, item)
+            )
+            editor.move_to_requested.connect(
+                lambda item, target, src=loc: self._on_move_to(src, target, item)
+            )
+            done_widget.restore_requested.connect(
+                lambda item, ld=loc_done: self._on_restore(ld, item)
+            )
+            done_widget.restore_to_requested.connect(
+                lambda item, target, ld=loc_done: self._on_restore_to(ld, target, item)
+            )
+            done_widget.delete_requested.connect(
+                lambda item, ld=loc_done: self._on_delete_permanent(ld, item)
             )
 
             square_layout.addWidget(editor)
             square_layout.addWidget(done_widget)
             row_layout.addWidget(square, 1)
 
-        # First launch or a missing data file: once the event loop is running,
-        # ask where to store data (same flow as changing the location manually).
-        if prompt_data_location:
-            QTimer.singleShot(0, self._prompt_data_location)
-
-    def _on_erased(self, loc_done: str, done_widget: QTextEdit, raw_items: list[str]):
+    def _on_erased(self, loc_done: str, done_widget: "DoneTextEdit", raw_items: list[str]):
         current_done = list(self.todolist.todolist_dict.get(loc_done, []))
         for item in raw_items:
             if item not in current_done:
                 current_done.insert(0, item)
-        current_done = current_done[:10]
+        current_done = current_done[:_DONE_LIMIT]
         self.todolist.set_quadrant(loc_done, current_done)
-        self._fill_done_widget(done_widget, current_done)
+        done_widget.set_items(current_done)
+
+    def _on_mark_done(self, loc: str, item: str):
+        """Right-click → 'Mark as done': remove from active loc, prepend to done."""
+        loc_done = _LOC_TO_DONE[loc]
+        active_items = list(self.todolist.todolist_dict.get(loc, []))
+        if item in active_items:
+            active_items.remove(item)
+            self.todolist.set_quadrant(loc, active_items)
+            self._editors[loc].set_content(active_items)
+        self._on_erased(loc_done, self._done_widgets[loc_done], [item])
+
+    def _on_move_to(self, src_loc: str, target_loc: str, item: str):
+        """Right-click → 'Move to quadrant': move between active quadrants."""
+        src_items = list(self.todolist.todolist_dict.get(src_loc, []))
+        if item in src_items:
+            src_items.remove(item)
+            self.todolist.set_quadrant(src_loc, src_items)
+            self._editors[src_loc].set_content(src_items)
+        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
+        if item not in target_items:
+            target_items.insert(0, item)
+            self.todolist.set_quadrant(target_loc, target_items)
+            self._editors[target_loc].set_content(target_items)
+
+    def _on_restore(self, loc_done: str, item: str):
+        """Right-click on done → 'Restore': back to the corresponding active loc."""
+        target_loc = _DONE_TO_LOC[loc_done]
+        self._on_restore_to(loc_done, target_loc, item)
+
+    def _on_restore_to(self, loc_done: str, target_loc: str, item: str):
+        """Right-click on done → 'Restore to quadrant': back to a chosen active loc."""
+        done_items = list(self.todolist.todolist_dict.get(loc_done, []))
+        if item in done_items:
+            done_items.remove(item)
+            self.todolist.set_quadrant(loc_done, done_items)
+            self._done_widgets[loc_done].set_items(done_items)
+        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
+        if item not in target_items:
+            target_items.insert(0, item)
+            self.todolist.set_quadrant(target_loc, target_items)
+            self._editors[target_loc].set_content(target_items)
+
+    def _on_delete_permanent(self, loc_done: str, item: str):
+        """Right-click on done → 'Delete permanently': drop the item for good."""
+        done_items = list(self.todolist.todolist_dict.get(loc_done, []))
+        if item in done_items:
+            done_items.remove(item)
+            self.todolist.set_quadrant(loc_done, done_items)
+            self._done_widgets[loc_done].set_items(done_items)
 
     def _on_remote_file_change(self, data: dict):
         """Slot for the remote-change signal: a *different* instance modified the
@@ -581,12 +871,12 @@ class MainWindow(QMainWindow):
         for loc, editor in self._editors.items():
             editor.set_content(data.get(loc, []))
         for loc, widget in self._done_widgets.items():
-            self._fill_done_widget(widget, data.get(loc, []))
+            widget.set_items(data.get(loc, []))
 
     def _clear_all_done(self):
         for loc_done, widget in self._done_widgets.items():
             self.todolist.set_quadrant(loc_done, [])
-            self._fill_done_widget(widget, [])
+            widget.set_items([])
         Output.print("All finished tasks cleared", level="info")
 
     def _load_backup(self):
@@ -773,6 +1063,42 @@ class MainWindow(QMainWindow):
         again on the next launch."""
         write_config_file(param="json_file_path", value=self._default_json_name, menu="PATH")
         Output.print(f"Using default data location: {self._default_json_name}", level="info")
+
+    def _show_data_location(self):
+        """Menu entry: show where the active data file lives, with buttons to
+        open the containing folder or change the location."""
+        abs_path = os.path.abspath(Path.json_file_path) if Path.json_file_path else ""
+        shown = abs_path or self.tr("(not set)")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(self.tr("Data location"))
+        box.setText(self.tr("Current data file:\n\n{0}\n").format(shown))
+        open_btn = box.addButton(self.tr("Open folder"), QMessageBox.ButtonRole.ActionRole)
+        open_btn.setEnabled(bool(abs_path))
+        change_btn = box.addButton(self.tr("Change location…"), QMessageBox.ButtonRole.ActionRole)
+        ok_btn = box.addButton(QMessageBox.StandardButton.Ok)
+        box.setDefaultButton(ok_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is open_btn:
+            self._open_folder(os.path.dirname(abs_path))
+        elif clicked is change_btn:
+            self._change_data_location_dialog()
+
+    def _open_folder(self, path: str):
+        """Open `path` in the system file manager (xdg-open under the hood).
+        Warns the user if the path is empty or unreachable."""
+        if not path or not os.path.isdir(path):
+            QMessageBox.warning(
+                self, self.tr("Open folder"),
+                self.tr("Folder not found:\n{0}").format(path or "(empty)"))
+            return
+        # QUrl.fromLocalFile on a relative path yields a relative URL
+        # (e.g. "file:save") that file managers reject ("Operation not
+        # supported"); resolve to an absolute path first.
+        path = os.path.abspath(path)
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+            Output.print(f"Could not open folder: {path}", level="warning")
 
     def _change_data_location_dialog(self):
         """Menu entry: let the user either point to an existing data file (and
@@ -986,7 +1312,8 @@ class MainWindow(QMainWindow):
     def _change_backup_limit(self):
         """Let the user set how many timestamped backups are kept in the save
         folder. Floor of 20 so an accidental tiny value cannot wipe weeks of
-        history on the next cleanup; no upper bound. Excess backups beyond
+        history on the next cleanup; the 'Unlimited' checkbox stores -1, which
+        clean_old_backups treats as 'keep everything'. Excess backups beyond
         the new limit are removed immediately via clean_old_backups (deferred
         import: main imports guiqt at module load, so a top-level import
         would be circular)."""
@@ -994,19 +1321,108 @@ class MainWindow(QMainWindow):
             current = int(str(read_config_file(param="backups_to_keep")))
         except (ValueError, OSError):
             current = 100
-        current = max(20, current)
-        value, ok = QInputDialog.getInt(
-            self,
-            self.tr("Number of backups to keep"),
-            self.tr("Keep up to this many timestamped backups (minimum 20):"),
-            current, 20, 2_147_483_647, 1,
-        )
-        if not ok:
+        unlimited = current <= 0
+        spin_default = 100 if unlimited else max(20, current)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(self.tr("Number of backups to keep"))
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel(
+            self.tr("Keep up to this many timestamped backups (minimum 20):")))
+
+        spin = QSpinBox(dlg)
+        spin.setRange(20, 2_147_483_647)
+        spin.setValue(spin_default)
+        layout.addWidget(spin)
+
+        check = QCheckBox(self.tr("Unlimited (keep every backup)"), dlg)
+        check.setChecked(unlimited)
+        spin.setDisabled(unlimited)
+        check.toggled.connect(lambda on: spin.setDisabled(on))
+        layout.addWidget(check)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
+            parent=dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
+        value = -1 if check.isChecked() else spin.value()
         write_config_file(param="backups_to_keep", value=str(value))
         from main import clean_old_backups
         clean_old_backups()
         Output.print(f"Backup limit set to {value}", level="info")
+
+    def _change_debounce(self):
+        """Tune editor responsiveness: the debounce delay before a typed change
+        is auto-formatted and saved. Lower is snappier but does work more often;
+        higher is lighter while idle. The slider runs in hundreds of
+        milliseconds (2..10) so the handle can only land on a 100 ms cran
+        between 200 and 1000 ms — no numeric value is shown. 'Restore defaults'
+        resets to 400 ms. The chosen value is applied live to every open
+        editor's timer and persisted to config."""
+        try:
+            current = int(str(read_config_file(param="debounce_ms")))
+        except (ValueError, OSError):
+            current = 400
+        current = min(1000, max(200, round(current / 100) * 100))
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(self.tr("Interface responsiveness"))
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel(self.tr(
+            "Delay before typed changes are formatted and saved.\n"
+            "Left: more responsive. Right: lighter on resources.")))
+
+        # Slider in hundreds of milliseconds so every step is one 100 ms cran
+        # and the handle cannot land between crans (no rounding needed).
+        slider = QSlider(Qt.Orientation.Horizontal, dlg)
+        slider.setRange(2, 10)
+        slider.setValue(current // 100)
+        slider.setSingleStep(1)
+        slider.setPageStep(1)
+        slider.setTickInterval(1)
+        slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        layout.addWidget(slider)
+
+        # Default marker (triangle under the 400 ms cran) + end captions, so the
+        # otherwise value-less slider still reads at a glance.
+        marker = SliderDefaultMarker(slider, 4, dlg)
+        marker.setToolTip(self.tr("Default (400 ms)"))
+        layout.addWidget(marker)
+
+        captions = QHBoxLayout()
+        left_caption = QLabel(self.tr("More responsive"), dlg)
+        right_caption = QLabel(self.tr("Lighter"), dlg)
+        for cap in (left_caption, right_caption):
+            cap.setStyleSheet("color: gray; font-size: 11px;")
+        captions.addWidget(left_caption, alignment=Qt.AlignmentFlag.AlignLeft)
+        captions.addStretch()
+        captions.addWidget(right_caption, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(captions)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.RestoreDefaults,
+            parent=dlg)
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
+            lambda: slider.setValue(4))
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        value = slider.value() * 100
+        write_config_file(param="debounce_ms", value=str(value))
+        for editor in self._editors.values():
+            editor._timer.setInterval(value)
+        self._debounce_ms = value
+        Output.print(f"Debounce set to {value} ms", level="info")
 
     def _show_help(self):
         """Open the help window in the language currently in effect.
@@ -1129,6 +1545,3 @@ class MainWindow(QMainWindow):
         # Hide to tray instead of closing; quit from the tray menu to exit
         event.ignore()
         self.hide()
-
-    def _fill_done_widget(self, widget: QTextEdit, items: list):
-        widget.setHtml("<br>".join(f"<s>{clean_line(item)}</s>" for item in items if item))

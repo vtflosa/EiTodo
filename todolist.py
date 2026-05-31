@@ -10,8 +10,8 @@
         - Not Urgent & Unimportant → delete or do at leisure
         ["U&I", "U&I_done", "NU&I", "NU&I_done", "U&Un", "U&Un_done", "NU&Un", "NU&Un_done"]
 
-    Multi-instance synchronisation (Linux only):
-        - Exclusive file lock via fcntl.flock() serialises concurrent writes.
+    Multi-instance synchronization (Linux only):
+        - Exclusive file lock via fcntl.flock() serializes concurrent writes.
         - Atomic write: serialise to .tmp then os.replace() so readers never
           see a partially written file.
         - A monotonic 'version' counter lets every instance detect stale local
@@ -39,6 +39,7 @@ from typing import Callable, Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from output import Output
 
@@ -60,18 +61,18 @@ class _StateChangeHandler(FileSystemEventHandler):
         self._last_seen_at: float = 0.0
 
     def on_modified(self, event):
-        if Path(event.src_path).resolve() == self._state_path:
+        if Path(os.fsdecode(event.src_path)).resolve() == self._state_path:
             self._process()
 
     def on_created(self, event):
         # MegaSync (and similar clients) rename from outside the watched
         # directory; inotify sees no IN_MOVED_FROM, so watchdog reports a
         # FileCreatedEvent instead of FileMovedEvent.
-        if Path(event.src_path).resolve() == self._state_path:
+        if Path(os.fsdecode(event.src_path)).resolve() == self._state_path:
             self._process()
 
     def on_moved(self, event):
-        if Path(event.dest_path).resolve() == self._state_path:
+        if Path(os.fsdecode(event.dest_path)).resolve() == self._state_path:
             self._process()
 
     def _process(self):
@@ -118,7 +119,7 @@ class ToDoList:
         ...
     }
 
-    A companion <file>.lock serialises concurrent writes via fcntl.flock().
+    A companion <file>.lock serializes concurrent writes via fcntl.flock().
 
     Conflict policy: last-writer-wins per quadrant.
     Inside the lock, only the quadrant(s) modified by the current operation
@@ -166,7 +167,7 @@ class ToDoList:
         self._last_writer: str = ""
 
         self._handler: Optional[_StateChangeHandler] = None
-        self._observer: Optional[Observer] = None
+        self._observer: Optional[BaseObserver] = None
         self._on_remote_change_cb: Optional[Callable[[dict], None]] = None
 
         self.load_initial_state()
@@ -286,15 +287,17 @@ class ToDoList:
 
     def _start_watcher(self, on_remote_change: Callable[[dict], None]):
         self._on_remote_change_cb = on_remote_change
-        self._handler = _StateChangeHandler(
+        handler = _StateChangeHandler(
             state_path=self.path,
             instance_id=self.instance_id,
             on_remote_change=on_remote_change,
         )
-        self._handler.update_local_state(self._updated_at)
-        self._observer = Observer()
-        self._observer.schedule(self._handler, str(self.path.parent), recursive=False)
-        self._observer.start()
+        handler.update_local_state(self._updated_at)
+        observer = Observer()
+        observer.schedule(handler, str(self.path.parent), recursive=False)
+        observer.start()
+        self._handler = handler
+        self._observer = observer
 
     # ------------------------------------------------------------------
     # Private — file I/O

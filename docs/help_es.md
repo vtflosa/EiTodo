@@ -28,6 +28,38 @@ aparece ahí tachada. *Borrar todas las tareas terminadas* en el
 menú vacía esas zonas inferiores en los cuatro cuadrantes a la
 vez.
 
+## Reorganizar y mover las tareas
+
+Además de escribir directamente, varios atajos y acciones de
+clic derecho ayudan a organizar las tareas:
+
+- **Ctrl+Arriba / Ctrl+Abajo** — mueve la línea que contiene el
+  cursor una posición hacia arriba o abajo (solo líneas no
+  vacías).
+- **Ctrl+clic sobre un enlace** — abre un enlace web detectado
+  (`http://`, `https://` o `www.`) en el navegador. Al mantener
+  Ctrl sobre un enlace, el cursor toma forma de mano.
+
+**Clic derecho sobre una tarea activa** abre un menú con:
+
+- **Abrir enlace** — si se detecta una URL bajo el cursor.
+- **Subir / Bajar** — equivalentes a los atajos Ctrl+Flecha.
+- **Marcar como terminada** — retira la tarea del editor y la
+  coloca en la zona de tareas terminadas (tachada).
+- **Mover al cuadrante ▸** — submenú con los otros tres
+  cuadrantes; la tarea desaparece de aquí y reaparece arriba en
+  la lista activa del cuadrante elegido.
+
+**Clic derecho sobre una tarea terminada** (zona tachada) abre:
+
+- **Restaurar a la lista activa** — devuelve la tarea arriba en
+  la lista activa del mismo cuadrante.
+- **Restaurar al cuadrante ▸** — submenú con los otros tres
+  cuadrantes; restaura la tarea en la lista activa de otro
+  cuadrante.
+- **Eliminar permanentemente** — retira la tarea de la lista
+  de terminadas para siempre.
+
 ## Dónde se guardan tus datos
 
 Tus tareas se guardan en un único **archivo JSON** (nombre por
@@ -143,3 +175,15 @@ seguridad**: elige un archivo `.json` de la carpeta save y
 confirma. Antes de reemplazar tus tareas actuales, EiTodo
 escribe una copia nueva de la matriz *actual*, de modo que la
 carga también es reversible.
+
+## Reactividad de la interfaz
+
+Cuando dejas de escribir, EiTodo espera un breve instante antes
+de formatear la línea y guardarla — este «debounce» evita
+trabajar con cada pulsación. **menú → Reactividad de la
+interfaz…** abre un control deslizante con muescas: muévelo a la
+izquierda para un retraso más corto (más reactivo, trabajo algo
+más frecuente) o a la derecha para un retraso más largo (más
+ligero para los recursos). Las muescas van de 200 a 1000 ms, en
+pasos de 100 ms; **Restaurar valores predeterminados** vuelve a
+400 ms. El cambio surte efecto de inmediato.

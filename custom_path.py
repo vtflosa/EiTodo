@@ -24,19 +24,23 @@ class Path:
     # default user path
     user_path = os.path.expanduser("~")
 
-
     icon_path = os.path.join(dir_path, "EiTodo.png")
     check_file(icon_path)
 
-    # ##########   Paths to be set and verifyed later  #################""
+    # ##########   Paths to be set and verified later  #################""
     # config_file
     config_file_path = os.path.join(dir_path, "config.INI")
 
     # json_file
-    json_file_path : str = ""
+    json_file_path: str = ""
 
     # path to log folder to save logs
-    log_folder: str= ""
+    log_folder: str = ""
 
     save_folder: str = ""
 
+    translations_folder = os.path.join(dir_path, "translations")
+    check_folder(translations_folder)
+
+    docs_folder = os.path.join(dir_path, "docs")
+    check_folder(docs_folder)

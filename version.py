@@ -26,6 +26,8 @@ def version():
               "V 1.0 : public release — installer hardening, autostart prompt, README\n"
               "V 1.1 : German and Spanish UI + help translations\n"
               "V 1.2 : docs corrected — cloud sync only, direct network shares not recommended\n"
-              "V 1.3 : version number shown in tray menu header + update instructions in README"
+              "V 1.3 : version number shown in tray menu header + update instructions in README\n"
+              "V 1.4 : right-click menus on quadrants\n"
+              "V 1.5 : open-folder & interface-responsiveness menus + Ctrl+click to open links"
               )
     return v_text.split("\n")[-1]

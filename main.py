@@ -9,6 +9,23 @@
         ["U&I", "U&I_done", "NU&I", "NU&I_done", "U&Un", "U&Un_done", "NU&Un", "NU&Un_done"]
 """
 
+# Todo tout relire pour vérifier
+#   • Envoyer Eitodo à Oliv et puch'
+#    • Relire et corriger le readme github et faire traduc en accord
+#   • Audit robustesse du code
+#   • Audit efficacité utilisation des ressources
+#   • Audit bugs
+#   • Audit sécurité des données
+#   • Tester insertion texte en plein milieu et effacer du texte - bug si on remplac equ'une seule ligne et manque la ligne en cours si plusieus lignes
+
+# il y a un problème de logique lorsqu'on sélectionne plusieurs lignes et qu'on tape du texte : ça efface les lignes en questions (donc elles doivent toutes apparaitre dans done). Ce n'est pas le cas, la ligne sous le curseur n'est pas envoyée dans done. De même si une seule ligne est sélectionnée et remplacée à la frappe clavier suivante elle n'apparait pas dans done. Le bug semble venir de la ligne qui comportait le curseur avant la sélécetion globale de plusieurs lignes
+
+# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il peut exister des bugs de fonctionnement ou des bugs dans la logique.
+# Si tu trouves des bugs, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
+# dans un second temps on verra ensemble pour corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
+# Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
+
+
 # general imports
 import os
 import re
@@ -30,12 +47,12 @@ from general import (read_config_file, read_config_file_menu,
                      write_config_file, write_config_file_menu,
                      get_timestamp_with_date)
 from todolist import ToDoList
-from guiqt import MainWindow as gui
+from guiqt import MainWindow
 
 
 _DEFAULT_CONFIG = {
     "first_launch": "True",
-    "debounce_ms": "250",
+    "debounce_ms": "400",
     "window_width": "900",
     "window_height": "900",
     "window_x": "0",
@@ -53,6 +70,7 @@ _DEFAULT_PATH = {
     "log_folder_path": "logs",
     "save_folder_path": "save",
     "json_file_path": "param.json"}
+
 
 def _default_param() -> dict:
     """Default task data, built lazily so the QTranslator (installed in main())
@@ -88,8 +106,6 @@ def _install_translators(app: QApplication) -> str:
     never empty). The caller persists it back to config.INI so the user
     sees which language is in effect.
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    translations_dir = os.path.join(base_dir, "translations")
 
     try:
         requested = str(read_config_file(param="language")).strip()
@@ -109,7 +125,7 @@ def _install_translators(app: QApplication) -> str:
         if lang == "en":
             return "en"  # English source — no catalog needed
         app_translator = QTranslator(app)
-        if app_translator.load(f"eitodo_{lang}", translations_dir):
+        if app_translator.load(f"eitodo_{lang}", Path.translations_folder):
             app.installTranslator(app_translator)
             app._eitodo_translator = app_translator  # prevent GC
             qt_translator = QTranslator(app)
@@ -187,8 +203,7 @@ def first_launch() -> bool:
 
     # check if this is the first launch
     if not os.path.isfile(Path.config_file_path):
-        with open(Path.config_file_path, "w", encoding="utf8") as f:
-            pass
+        open(Path.config_file_path, "w", encoding="utf8").close()
         write_config_file_menu(menu="CONFIG", data=_DEFAULT_CONFIG)
         write_config_file_menu(menu="PATH", data=_DEFAULT_PATH)
 
@@ -232,8 +247,8 @@ class ShutdownInhibitor(QObject):
     """
 
     _SERVICE = "org.freedesktop.login1"
-    _PATH    = "/org/freedesktop/login1"
-    _IFACE   = "org.freedesktop.login1.Manager"
+    _PATH = "/org/freedesktop/login1"
+    _IFACE = "org.freedesktop.login1.Manager"
 
     def __init__(self, on_shutdown, parent=None):
         super().__init__(parent)
@@ -284,10 +299,21 @@ class ShutdownInhibitor(QObject):
             except OSError:
                 pass
             self._lock_fd = -1
+            Output.print("*" * 50)
             Output.print("Shutdown inhibitor: lock released", level="info")
+            Output.print("*" * 50)
 
 
 def main():
+
+    # Drop the virtualenv marker so it is not inherited by external programs we
+    # launch (file manager, browser via QDesktopServices). Otherwise their
+    # embedded Python tooling (e.g. nemo-python) looks inside our venv, which
+    # lacks the system gobject bindings, and prints "No module named 'gi'".
+    # Python itself does not need VIRTUAL_ENV: it locates packages from the
+    # interpreter path, so removing it does not affect EiTodo's own imports.
+    os.environ.pop("VIRTUAL_ENV", None)
+    os.environ.pop("VIRTUAL_ENV_PROMPT", None)
 
     # QApplication and translators must exist before first_launch(): the
     # default-task strings written into the initial param.json go through
@@ -308,7 +334,7 @@ def main():
     # the previous process's log; we pop it so an unrelated next launch starts
     # a fresh file.
     continue_log = os.environ.pop("EITODO_LOG_CONTINUE", None)
-    log = Log(Path.log_folder, 20, continue_from=continue_log)
+    Log(Path.log_folder, 25, continue_from=continue_log)
     Output.print(version())
 
     # Always log the active UI language at startup so the log file documents
@@ -351,12 +377,12 @@ def main():
 
         Output.print(f"Loading data: {Path.json_file_path}", level="info")
         todolist = ToDoList(Path.json_file_path, default_data=_default_param())
-        debounce_ms  = int(str(read_config_file(param="debounce_ms")))
-        win_width    = int(str(read_config_file(param="window_width")))
-        win_height   = int(str(read_config_file(param="window_height")))
-        win_x        = int(str(read_config_file(param="window_x")))
-        win_y        = int(str(read_config_file(param="window_y")))
-        win_screen   = str(read_config_file(param="window_screen")).strip()
+        debounce_ms = int(str(read_config_file(param="debounce_ms")))
+        win_width = int(str(read_config_file(param="window_width")))
+        win_height = int(str(read_config_file(param="window_height")))
+        win_x = int(str(read_config_file(param="window_x")))
+        win_y = int(str(read_config_file(param="window_y")))
+        win_screen = str(read_config_file(param="window_screen")).strip()
         start_hidden = str(read_config_file(param="start_hidden")).strip().lower() == "true"
         try:
             font = str(read_config_file(param="font")).strip()
@@ -369,12 +395,12 @@ def main():
             font_size = int(_DEFAULT_CONFIG["font_size"])
             write_config_file(param="font_size", value=_DEFAULT_CONFIG["font_size"])
 
-        window = gui(todolist=todolist, debounce_ms=debounce_ms,
-                     width=win_width, height=win_height,
-                     x=win_x, y=win_y, screen_name=win_screen,
-                     prompt_data_location=prompt_data_location,
-                     default_json_name=_DEFAULT_PATH["json_file_path"],
-                     font=font, font_size=font_size)
+        window = MainWindow(todolist=todolist, debounce_ms=debounce_ms,
+                            width=win_width, height=win_height,
+                            x=win_x, y=win_y, screen_name=win_screen,
+                            prompt_data_location=prompt_data_location,
+                            default_json_name=_DEFAULT_PATH["json_file_path"],
+                            font=font, font_size=font_size)
 
         # ---- Shutdown / exit save hooks --------------------------------------
         # EiTodo must back up param.json on the way out, whatever the exit route.
@@ -393,7 +419,7 @@ def main():
         # the "Param backup:" log line, so the messages below only name the route.
 
         # 1. logind delay inhibitor (primary reboot/shutdown path). Keep the
-        # reference so it is not garbage-collected while the app runs, and
+        # reference so it is not garbage-collected while the app runs. And
         # expose it on the app so the language-change restart in guiqt can
         # release it explicitly before os.execv (CLOEXEC would also release
         # it silently, but the explicit call logs the transition).
@@ -442,13 +468,16 @@ def main():
                              level="info")
                 window._quit()
 
+        # noinspection PyTypeChecker
         _sig_notifier = QSocketNotifier(_sig_r.fileno(), QSocketNotifier.Type.Read)
         _sig_notifier.activated.connect(lambda _fd: _dispatch_signal())
+        app._sig_notifier = _sig_notifier
 
         def _handle_os_signal(_signum, _frame):
             pass  # the wake-up is done by set_wakeup_fd; the work is in _dispatch_signal
 
         signal.set_wakeup_fd(_sig_w.fileno())
+        signal.signal(signal.SIGINT, _handle_os_signal)
         signal.signal(signal.SIGTERM, _handle_os_signal)
         signal.signal(signal.SIGHUP, _handle_os_signal)
         # ----------------------------------------------------------------------
@@ -468,10 +497,13 @@ def main():
         Output.print(f"{get_timestamp_with_date()} - EXCEPTION RAISED IN MAIN : {e}\n {traceback.format_exc()}",
                      level="error")
     finally:
-        Output.print(f"\n")
-        Output.print(f"*******  END OF PROGRAM !   ******\n\n")
         if inhibitor is not None:
             inhibitor.release()  # last: logind has waited for us up to here
+        Output.print("\n")
+        Output.print(f"{'-' * 50}")
+        Output.print(f"\t\t\t\t  END OF PROGRAM ! ")
+        Output.print(f"{'-' * 50}")
+
 
 # ###########################  END OF MAIN  #############################
 

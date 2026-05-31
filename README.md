@@ -61,6 +61,13 @@ EiTodo affiche vos tâches dans quatre cadrans qui croisent **urgence** et **imp
 
 Chaque cadran a deux zones : un éditeur en haut pour la liste active, et une zone en lecture seule en dessous qui conserve les dernières tâches terminées (avec le texte barré). Quand vous supprimez une ligne dans l'éditeur, elle apparaît automatiquement dans la zone du bas.
 
+**Réorganiser et déplacer les tâches :**
+
+- **Ctrl+Haut / Ctrl+Bas** : monter ou descendre la ligne sous le curseur d'un cran.
+- **Ctrl+clic sur un lien** : ouvrir dans le navigateur un lien web détecté (`http://`, `https://` ou `www.`). En maintenant Ctrl au survol d'un lien, le curseur prend la forme d'une main.
+- **Clic droit sur une tâche active** : ouvrir un lien, monter/descendre, marquer comme terminée, ou déplacer vers un autre cadran (sous-menu avec les trois autres).
+- **Clic droit sur une tâche terminée** (zone barrée) : restaurer dans la liste active, restaurer vers un autre cadran, ou supprimer définitivement.
+
 #### Lancer le programme
 
 - Double-cliquer sur l'icône EiTodo sur le bureau
@@ -103,6 +110,7 @@ Une aide détaillée est accessible via **menu → Aide** (dans la langue active
 - ✅ Sauvegardes automatiques fréquentes et horodatées
 - ✅ Aucun serveur — toutes les données restent sur votre disque
 - ✅ Police personnalisable via **menu → Changer la police…**
+- ✅ Réactivité de l'interface réglable via **menu → Réactivité de l'interface…** : un curseur à crans (de 200 à 1000 ms, par pas de 100) ajuste le délai avant qu'une saisie soit formatée et enregistrée — vers la gauche pour plus de réactivité, vers la droite pour ménager les ressources ; bouton « Restaurer les valeurs par défaut » pour revenir à 400 ms.
 
 ### Désinstallation
 
@@ -188,6 +196,13 @@ EiTodo lays out tasks in four quadrants crossing **urgency** and **importance**:
 
 Each quadrant has two zones: an editor on top for the live task list, and a read-only area below that keeps your last finished tasks (struck through). When you delete a line from the editor, it shows up in the area below automatically.
 
+**Reordering and moving tasks:**
+
+- **Ctrl+Up / Ctrl+Down**: move the line under the cursor up or down by one.
+- **Ctrl+click on a link**: open a detected web link (`http://`, `https://` or `www.`) in your browser. Holding Ctrl while hovering a link shows a pointing-hand cursor.
+- **Right-click on an active task**: open a link, move up/down, mark as done, or move to another quadrant (submenu with the three other quadrants).
+- **Right-click on a finished task** (strikethrough zone): restore to the active list, restore to another quadrant, or delete permanently.
+
 #### Launching the program
 
 - Double-click the EiTodo icon on the desktop
@@ -230,6 +245,7 @@ A detailed help page is available via **menu → Help** (in the active language)
 - ✅ Frequent, timestamped automatic backups
 - ✅ No server — all data stays on your disk
 - ✅ Customisable font via **menu → Change font…**
+- ✅ Adjustable interface responsiveness via **menu → Interface responsiveness…**: a notched slider (200 to 1000 ms, in steps of 100) sets the delay before a typed change is formatted and saved — left for snappier, right to go lighter on resources; a "Restore defaults" button returns to 400 ms.
 
 ### Uninstallation
 

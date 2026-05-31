@@ -3,6 +3,7 @@
 """ general helper functions"""
 
 # general import
+import re
 import datetime
 import configparser
 import subprocess
@@ -10,6 +11,10 @@ import subprocess
 # local import
 from custom_path import Path
 from output import Output
+
+# A whitespace-delimited web link: 'http(s)://...' or 'www....'. Shared with the
+# GUI so link detection and capitalization stay consistent.
+URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
 
 
 def ping(host: str) -> bool:
@@ -57,6 +62,7 @@ def read_config_file_menu(menu: str = "CONFIG") -> dict:
             Output.print(f"Menu '{menu}' not found in config file", level="error")
             raise ValueError(f"{menu} is not a valid menu option in config file")
 
+
 def read_config_file(menu: str = "CONFIG", param: str = "") -> str:
     """ read the config file and return the value
     """
@@ -78,7 +84,8 @@ def write_config_file(param: str, value: str, menu: str = "CONFIG"):
     with open(Path.config_file_path, "w", encoding="utf8") as f:
         config.write(f)
 
-def write_config_file_menu(menu: str = "CONFIG",data: dict = {} ) -> None:
+
+def write_config_file_menu(data: dict, menu: str = "CONFIG") -> None:
     config = configparser.ConfigParser()
     with open(Path.config_file_path, "r", encoding="utf8") as f:
         config.read_file(f)
@@ -87,38 +94,51 @@ def write_config_file_menu(menu: str = "CONFIG",data: dict = {} ) -> None:
         config.write(f)
 
 
-
 # ####################### END OFconfig.INI read and write  #########################################
 # ##################################################################################################
 
 
 # ##################################################################################################
 # ####################### text / bullet helpers  ###################################################
+#
+# Quadrant items are rendered in the editor as "• Text" but stored in param.json
+# as raw strings (no bullet, no leading whitespace). These helpers translate
+# between the two forms and let the editor diff successive states to detect
+# edits vs. erasures. A "• " alone (or whitespace around it) counts as empty —
+# the user has not yet typed an item on that line.
 
 def is_empty(line: str) -> bool:
+    """True if the line has no content besides whitespace and bullet chars."""
     return not line.strip().replace("•", "").strip()
 
 
 def clean_line(line: str) -> str:
+    """Normalize one line to the display form '• Capitalized text', or '' if empty."""
     s = line.lstrip()
     if s.startswith("•"):
         s = s[1:].lstrip()
     if not s:
         return ""
+    # Don't capitalize the first character when the line starts with a web link,
+    # so URLs are left intact (e.g. 'https://...' must not become 'Https://...').
+    if URL_RE.match(s):
+        return "• " + s
     return "• " + s[0].upper() + s[1:]
 
 
 def clean_text(text: str) -> str:
-    lines = [clean_line(l) for l in text.splitlines() if not is_empty(l)]
+    """Apply clean_line to every non-empty line; join with '\\n' and a trailing newline."""
+    lines = [clean_line(line) for line in text.splitlines() if not is_empty(line)]
     return ("\n".join(lines) + "\n") if lines else ""
 
 
 def snapshot(text: str) -> dict[int, str]:
+    """Map line-index -> line for non-empty lines, used to diff edits against the previous state."""
     return {i: l for i, l in enumerate(text.splitlines()) if not is_empty(l)}
 
 
 def get_raw(text: str) -> list[str]:
-    """Return items stripped of the '• ' prefix (raw storage format)."""
+    """Return items stripped of the '• ' prefix (raw storage format for param.json)."""
     result = []
     for line in text.splitlines():
         s = line.strip()
@@ -131,7 +151,6 @@ def get_raw(text: str) -> list[str]:
 
 # ####################### END OF text / bullet helpers  ############################################
 # ##################################################################################################
-
 
 
 if __name__ == '__main__':

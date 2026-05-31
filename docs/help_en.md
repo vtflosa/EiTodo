@@ -24,6 +24,38 @@ tasks. When you delete a line from the editor, it shows up there
 with a strikethrough. *Clear all finished tasks* in the tray menu
 wipes those bottom areas for every quadrant at once.
 
+## Reordering and moving tasks
+
+Beyond plain typing, several shortcuts and right-click actions
+help you organise tasks:
+
+- **Ctrl+Up / Ctrl+Down** — move the line containing the cursor
+  one position up or down (non-empty lines only).
+- **Ctrl+click on a link** — open a detected web link
+  (`http://`, `https://` or `www.`) in your browser. Holding
+  Ctrl while hovering a link shows a pointing-hand cursor.
+
+**Right-click on an active task line** opens a menu with:
+
+- **Open link** — if a URL is detected under the cursor.
+- **Move up / Move down** — same as the Ctrl+Up/Down shortcuts.
+- **Mark as done** — remove the task from the editor and place
+  it in the finished zone below (with strikethrough).
+- **Move to quadrant ▸** — submenu with the three other
+  quadrants; the task disappears here and reappears at the top
+  of the chosen quadrant's active list.
+
+**Right-click on a finished task** (the strikethrough zone)
+opens:
+
+- **Restore to active list** — bring the task back to the top
+  of the active list of the same quadrant.
+- **Restore to quadrant ▸** — submenu with the three other
+  quadrants; restore the task into a different quadrant's
+  active list.
+- **Delete permanently** — remove the task from the finished
+  list for good.
+
 ## Where your data lives
 
 Your tasks are stored as a single **JSON file** (default name
@@ -126,3 +158,14 @@ To restore a backup, use **tray → Load a backup**: pick a `.json`
 file from the save folder and confirm. Before replacing your
 current tasks, EiTodo writes a fresh backup of the *current*
 matrix, so the load itself is reversible.
+
+## Interface responsiveness
+
+EiTodo waits a short moment after you stop typing before it
+formats the line and saves it — this "debounce" avoids doing
+work on every keystroke. **tray → Interface responsiveness…**
+opens a notched slider: drag it left for a shorter delay (a
+snappier feel, slightly more frequent work) or right for a
+longer delay (lighter on resources). Steps run from 200 to
+1000 ms in 100 ms increments; **Restore defaults** brings it
+back to 400 ms. The change takes effect immediately.

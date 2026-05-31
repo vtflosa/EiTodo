@@ -10,6 +10,7 @@ env/
 # --- Editors / IDE ---
 .idea/
 *.swp
+.claude/settings.local.json
 
 # --- Generated config (created on first launch, machine-specific) ---
 config.INI

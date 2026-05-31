@@ -29,6 +29,39 @@ eine Zeile aus dem Editor löschen, erscheint sie dort
 durchgestrichen. *Alle erledigten Aufgaben löschen* im Menü leert
 diese unteren Bereiche in allen vier Quadranten auf einmal.
 
+## Aufgaben umsortieren und verschieben
+
+Neben dem direkten Tippen helfen einige Tastaturkürzel und
+Rechtsklick-Aktionen, Aufgaben zu organisieren:
+
+- **Strg+Hoch / Strg+Runter** — verschiebt die Zeile mit dem
+  Cursor um eine Position nach oben oder unten (nur nicht-leere
+  Zeilen).
+- **Strg+Klick auf einen Link** — öffnet einen erkannten
+  Weblink (`http://`, `https://` oder `www.`) im Browser. Hält
+  man Strg über einem Link gedrückt, erscheint ein Hand-Cursor.
+
+**Rechtsklick auf eine aktive Aufgabe** öffnet ein Menü mit:
+
+- **Link öffnen** — wenn unter dem Cursor eine URL erkannt wird.
+- **Nach oben / Nach unten** — entspricht den Strg-Pfeil-Kürzeln.
+- **Als erledigt markieren** — entfernt die Aufgabe aus dem
+  Editor und legt sie unten in den durchgestrichenen Bereich.
+- **In Quadrant verschieben ▸** — Untermenü mit den drei
+  anderen Quadranten; die Aufgabe verschwindet hier und
+  erscheint oben in der aktiven Liste des gewählten Quadranten.
+
+**Rechtsklick auf eine erledigte Aufgabe** (durchgestrichener
+Bereich) öffnet:
+
+- **In aktive Liste zurück** — bringt die Aufgabe oben in die
+  aktive Liste desselben Quadranten zurück.
+- **In Quadrant zurück ▸** — Untermenü mit den drei anderen
+  Quadranten; stellt die Aufgabe in der aktiven Liste eines
+  anderen Quadranten wieder her.
+- **Endgültig löschen** — entfernt die Aufgabe dauerhaft aus
+  der Liste der erledigten Aufgaben.
+
 ## Wo Ihre Daten gespeichert sind
 
 Ihre Aufgaben werden in einer einzigen **JSON-Datei** gespeichert
@@ -148,3 +181,16 @@ eine `.json`-Datei aus dem Save-Ordner auswählen und
 bestätigen. Vor dem Ersetzen der aktuellen Aufgaben schreibt
 EiTodo eine frische Sicherung der *aktuellen* Matrix, so dass
 auch das Laden selbst rückgängig gemacht werden kann.
+
+## Reaktionsfähigkeit der Oberfläche
+
+Nachdem Sie aufhören zu tippen, wartet EiTodo einen kurzen
+Moment, bevor die Zeile formatiert und gespeichert wird — dieses
+„Debounce“ vermeidet Arbeit bei jedem Tastendruck. **Menü →
+Reaktionsfähigkeit der Oberfläche…** öffnet einen Schieberegler
+mit Rasten: nach links für eine kürzere Verzögerung (reaktiver,
+etwas häufigere Arbeit) oder nach rechts für eine längere
+Verzögerung (ressourcenschonender). Die Rasten reichen von 200
+bis 1000 ms in 100-ms-Schritten; **Standardwerte
+wiederherstellen** setzt auf 400 ms zurück. Die Änderung wirkt
+sofort.

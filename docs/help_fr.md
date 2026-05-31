@@ -29,6 +29,41 @@ une ligne dans l'éditeur, elle apparaît en dessous barrée.
 notification) vide ces zones inférieures pour les quatre
 quadrants d'un coup.
 
+## Réorganiser et déplacer les tâches
+
+En plus de la saisie directe, plusieurs raccourcis et actions au
+clic droit aident à organiser les tâches :
+
+- **Ctrl+Haut / Ctrl+Bas** — déplace la ligne contenant le
+  curseur d'un cran vers le haut ou le bas (lignes non-vides
+  uniquement).
+- **Ctrl+clic sur un lien** — ouvre un lien web détecté
+  (`http://`, `https://` ou `www.`) dans le navigateur. En
+  maintenant Ctrl au survol d'un lien, le curseur prend la forme
+  d'une main.
+
+**Clic droit sur une tâche active** ouvre un menu avec :
+
+- **Ouvrir le lien** — si une URL est détectée sous le curseur.
+- **Monter / Descendre** — équivalents des raccourcis
+  Ctrl+Haut/Bas.
+- **Marquer comme terminée** — retire la tâche de l'éditeur et
+  la place dans la zone des tâches terminées en dessous
+  (barrée).
+- **Déplacer vers un cadran ▸** — sous-menu avec les trois
+  autres cadrans ; la tâche disparaît d'ici et apparaît en haut
+  de la liste active du cadran choisi.
+
+**Clic droit sur une tâche terminée** (zone barrée) ouvre :
+
+- **Restaurer dans la liste active** — ramène la tâche en haut
+  de la liste active du même cadran.
+- **Restaurer vers un cadran ▸** — sous-menu avec les trois
+  autres cadrans ; restaure la tâche dans la liste active d'un
+  autre cadran.
+- **Supprimer définitivement** — retire la tâche de la liste
+  des terminées pour de bon.
+
 ## Où sont stockées vos données
 
 Vos tâches sont enregistrées dans un unique **fichier JSON** (par
@@ -147,3 +182,15 @@ sauvegarde** : choisissez un fichier `.json` dans le dossier
 `save/` et confirmez. Avant de remplacer vos tâches actuelles,
 EiTodo écrit une nouvelle sauvegarde de la matrice *en cours*,
 de sorte que le chargement reste réversible.
+
+## Réactivité de l'interface
+
+Après que vous arrêtez de taper, EiTodo attend un court instant
+avant de formater la ligne et de l'enregistrer — ce « debounce »
+évite de travailler à chaque frappe. **menu → Réactivité de
+l'interface…** ouvre un curseur à crans : déplacez-le vers la
+gauche pour un délai plus court (interface plus réactive, travail
+un peu plus fréquent) ou vers la droite pour un délai plus long
+(plus léger pour les ressources). Les crans vont de 200 à
+1000 ms, par pas de 100 ms ; **Restaurer les valeurs par défaut**
+revient à 400 ms. Le changement prend effet immédiatement.
