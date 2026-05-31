@@ -548,7 +548,7 @@ class SliderDefaultMarker(QWidget):
         super().__init__(parent)
         self._slider = slider
         self._value = value
-        self.setFixedHeight(7)
+        self.setFixedHeight(10)
 
     def paintEvent(self, event):
         slider = self._slider
@@ -559,12 +559,14 @@ class SliderDefaultMarker(QWidget):
             slider.minimum(), slider.maximum(), self._value, span)
         cx = handle // 2 + pos
         h = self.height()
+        half = h - 3  # base half-width: a clearly visible, slightly wide pip
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(self.palette().mid())
+        # Accent colour so the default marker stands out from the slider groove.
+        painter.setBrush(self.palette().highlight())
         painter.drawPolygon(QPolygon([
-            QPoint(cx, 0), QPoint(cx - h, h), QPoint(cx + h, h)]))
+            QPoint(cx, 0), QPoint(cx - half, h - 1), QPoint(cx + half, h - 1)]))
 
 
 # ---------------------------------------------------------------------------
