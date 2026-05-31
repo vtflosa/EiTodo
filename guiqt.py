@@ -96,6 +96,22 @@ def _latest_backup(save_folder: str, name: str) -> str | None:
 # Tracked editor — debounce + auto-format + save to todolist
 # ---------------------------------------------------------------------------
 
+def _looks_like_edit(old: str, new: str) -> bool:
+    """True if display line `new` plausibly is `old` after in-place typing
+    (append, truncate, or a small edit) rather than a fresh overwrite. Compared
+    on the item text only — the shared '• ' bullet is stripped, so short items
+    aren't judged similar just because they carry the same bullet."""
+    a = get_raw(old)
+    b = get_raw(new)
+    a = a[0] if a else ""
+    b = b[0] if b else ""
+    if not a or not b:
+        return False
+    if b.startswith(a) or a.startswith(b):
+        return True
+    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio() >= 0.6
+
+
 class TrackedTextEdit(QPlainTextEdit):
     items_erased = pyqtSignal(list)        # raw items removed by typing/deletion
     mark_done_requested = pyqtSignal(str)  # raw item → move to corresponding _done
@@ -181,11 +197,14 @@ class TrackedTextEdit(QPlainTextEdit):
 
         current = snapshot(self.toPlainText())
         if current != self._snap:
-            # Detect erasures via line-level diff. Same-count `replace` ops are
-            # in-place edits (typing mid-line) and must NOT count as erasures;
-            # only `delete` ops and the surplus of an oversized `replace` are
-            # truly removed items. Items still present elsewhere in the new
-            # text (reorders) are filtered out.
+            # Detect erasures via a line-level diff. A `delete` op removes items
+            # outright. A `replace` op is ambiguous: typing into a line edits it
+            # in place (keep it), but selecting one or more lines and typing over
+            # them removes those lines (send them to 'done'). We tell the two
+            # apart by content similarity instead of position: within a replace
+            # op, each old line is paired with a new line it plausibly became
+            # (append / truncate / small edit). Old lines with no such match —
+            # and not merely reordered elsewhere — are the ones truly erased.
             old_lines = [v for _, v in sorted(self._snap.items())]
             new_lines = [v for _, v in sorted(current.items())]
             new_set = set(new_lines)
@@ -196,9 +215,13 @@ class TrackedTextEdit(QPlainTextEdit):
                     truly_erased.extend(item for item in old_lines[i1:i2]
                                         if item not in new_set)
                 elif tag == "replace":
-                    paired = j2 - j1
-                    for item in old_lines[i1 + paired:i2]:
-                        if item not in new_set:
+                    remaining = list(new_lines[j1:j2])
+                    for item in old_lines[i1:i2]:
+                        match = next((k for k, nl in enumerate(remaining)
+                                      if _looks_like_edit(item, nl)), None)
+                        if match is not None:
+                            remaining.pop(match)
+                        elif item not in new_set:
                             truly_erased.append(item)
             raw_erased = [get_raw(line)[0] for line in truly_erased if get_raw(line)]
             if raw_erased:
