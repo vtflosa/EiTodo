@@ -5,10 +5,12 @@ import os
 import re
 import sys
 import json
+import html
 import shutil
 import difflib
 import logging
 import datetime
+import time
 
 
 from custom_path import Path
@@ -380,13 +382,22 @@ class DoneTextEdit(QTextEdit):
 
     def set_items(self, items: list[str]):
         """Render items as one strikethrough block per item so blockNumber
-        maps directly to the item index (used by the right-click menu)."""
-        self._items = [item for item in items if item]
-        html = "".join(
-            f"<div style='margin:0;padding:0;'><s>{clean_line(item)}</s></div>"
+        maps directly to the item index (used by the right-click menu).
+
+        Only the most recent _DONE_LIMIT items are displayed. The backing store
+        may transiently hold more — loading a backup or a remote change are not
+        capped — so this trims the view (and the context-menu mapping) without
+        ever rewriting the stored data; the next completion (_on_erased) trims
+        the file back to the limit."""
+        self._items = [item for item in items if item][:_DONE_LIMIT]
+        # Escape the task text: it is injected into rich text via setHtml(), so
+        # raw '<', '>' or '&' would be parsed as markup and corrupt or hide the
+        # item. self._items keeps the un-escaped text for the context menu.
+        body = "".join(
+            f"<div style='margin:0;padding:0;'><s>{html.escape(clean_line(item))}</s></div>"
             for item in self._items
         )
-        self.setHtml(html)
+        self.setHtml(body)
 
     def contextMenuEvent(self, event):
         menu = self.createStandardContextMenu()
@@ -889,6 +900,10 @@ class MainWindow(QMainWindow):
         call _on_remote_change), then the editors are refreshed on the main thread."""
         Output.print(f"Remote change received from another instance "
                      f"(version {data.get('version', '?')})", level="info")
+        # Keep the ToDoList's in-memory state in sync with what we just received,
+        # so a subsequent right-click op (which rebuilds a quadrant from
+        # todolist_dict, not from the widget) doesn't revert this remote change.
+        self.todolist.apply_remote_state(data)
         self._on_remote_change(data)
 
     def _on_remote_change(self, data: dict):
@@ -1040,8 +1055,13 @@ class MainWindow(QMainWindow):
 
     def _switch_to_data_file(self, path: str):
         """Persist path as the configured data file, switch the todolist to it,
-        and refresh the UI from its content."""
-        write_config_file(param="json_file_path", value=path, menu="PATH")
+        and refresh the UI from its content.
+
+        The path is stored in config.INI in its portable form (relative when it
+        lives inside the install folder), so a relocation that stays within a
+        shared/synced install folder still works on every machine; the running
+        session keeps the resolved absolute path in memory."""
+        write_config_file(param="json_file_path", value=Path.to_portable(path), menu="PATH")
         Path.json_file_path = path
         self.todolist.set_path(path)
         self._on_remote_change(self.todolist.todolist_dict)
@@ -1536,6 +1556,16 @@ class MainWindow(QMainWindow):
                 except OSError as e:
                     Output.print(f"Failed to rename backup: {e}", level="error")
             return
+
+        # Changed data: this second's backup must never overwrite an earlier
+        # one. If the file already exists (two backups within the same second),
+        # wait for the next second and recompute the name so each backup keeps
+        # its own file. copy2 is the only path that can clobber; the no-change
+        # branch above renames and is already collision-safe.
+        while os.path.exists(dest):
+            time.sleep(0.25)
+            timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
+            dest = os.path.join(Path.save_folder, f"{timestamp}_{name}.json")
 
         try:
             shutil.copy2(src, dest)

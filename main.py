@@ -14,17 +14,17 @@
 #    • Relire et corriger le readme github et faire traduc en accord
 #   • Audit robustesse du code
 #   • Audit efficacité utilisation des ressources
-#   • Audit bugs
 #   • Audit sécurité des données
 #   • Tester insertion texte en plein milieu et effacer du texte - bug si on remplac equ'une seule ligne et manque la ligne en cours si plusieus lignes
 
-# il y a un problème de logique lorsqu'on sélectionne plusieurs lignes et qu'on tape du texte : ça efface les lignes en questions (donc elles doivent toutes apparaitre dans done). Ce n'est pas le cas, la ligne sous le curseur n'est pas envoyée dans done. De même si une seule ligne est sélectionnée et remplacée à la frappe clavier suivante elle n'apparait pas dans done. Le bug semble venir de la ligne qui comportait le curseur avant la sélécetion globale de plusieurs lignes
 
-# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il peut exister des bugs de fonctionnement ou des bugs dans la logique.
-# Si tu trouves des bugs, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
-# dans un second temps on verra ensemble pour corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
+# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des problèmes d'efficacité ou d'utilisation de ressources
+# Si tu trouves des problèmes d'utilisation exessives de ressources ou de fuite de mémmoire, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
+# tu m'indiques comment tester et reproduire le bug en situation réelle avant de me proposer de corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
 # Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
 
+
+# todo autoupdate au démarrage dans un autre module
 
 # general imports
 import os
@@ -151,13 +151,22 @@ def set_and_check_paths() -> bool:
     """
     try:
         cfg = read_config_file_menu(menu="PATH")
-        Path.log_folder = cfg["log_folder_path"]
+
+        # Resolve relative config paths against the script's own directory
+        # (Path.dir_path), NOT the process CWD. This makes the app independent
+        # of where it is launched from, while keeping config.INI portable: it
+        # stores only relative names, so a shared/synced install folder works on
+        # several machines (different absolute home paths) — Path.dir_path is
+        # recomputed per machine. Absolute values in config (a data file
+        # relocated outside the install folder) are kept as-is. Resolution
+        # stays in memory only; nothing is written back to config here.
+        Path.log_folder = Path.resolve(cfg["log_folder_path"])
         Path.check_folder(Path.log_folder)
 
-        Path.save_folder = cfg["save_folder_path"]
+        Path.save_folder = Path.resolve(cfg["save_folder_path"])
         Path.check_folder(Path.save_folder)
 
-        Path.json_file_path = cfg["json_file_path"]
+        Path.json_file_path = Path.resolve(cfg["json_file_path"])
     except FileNotFoundError as e:
         Output.print(f"Path error: {e}", level="error")
         raise FileNotFoundError(f"Error in path : {e}")

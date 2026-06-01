@@ -28,6 +28,8 @@ def version():
               "V 1.2 : docs corrected — cloud sync only, direct network shares not recommended\n"
               "V 1.3 : version number shown in tray menu header + update instructions in README\n"
               "V 1.4 : right-click menus on quadrants\n"
-              "V 1.5 : open-folder & interface-responsiveness menus + Ctrl+click to open links"
+              "V 1.5 : open-folder & interface-responsiveness menus + Ctrl+click to open links\n"
+              "V 1.6 : robustness fixes — sync right-click data loss, done-panel HTML escaping & display cap,"
+              " backup name collisions, CWD-independent portable paths"
               )
     return v_text.split("\n")[-1]

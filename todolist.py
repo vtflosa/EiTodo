@@ -86,6 +86,15 @@ class _StateChangeHandler(FileSystemEventHandler):
         # independent counters to the same value, making version-based
         # deduplication silently drop one side's changes. Timestamps from
         # different wall-clocks are far less likely to collide.
+        #
+        # Known limitation (accepted, not fixed): this live dedup is purely
+        # timestamp-based, so a large clock skew between synced machines can mask
+        # a real remote change whose updated_at looks "not newer" than the last
+        # one seen — the live refresh would miss it until the lagging clock
+        # catches up (the pre-write _refresh() still has its version check as a
+        # partial net). In practice machines are NTP-synced (sub-second skew), so
+        # this is left as-is: keep the machines' clocks in sync for reliable
+        # multi-device updates.
         updated_at = data.get("updated_at", 0.0)
         if updated_at <= self._last_seen_at:
             return  # already processed this write
@@ -258,6 +267,19 @@ class ToDoList:
         """Wire up (or replace) the remote-change callback and (re)start the watcher."""
         self.stop_watcher()
         self._start_watcher(callback)
+
+    def apply_remote_state(self, data: dict):
+        """Adopt the full raw state pushed by a remote change so the in-memory
+        state stays in sync with what another instance just wrote to disk:
+        todolist_dict together with the version / updated_at / last_writer
+        metadata. `data` must be the full payload (with metadata keys), i.e.
+        what the watchdog parses from the file — not a metadata-stripped dict.
+
+        Without this, a later operation that rebuilds a quadrant from
+        todolist_dict (e.g. a right-click 'mark done' / 'move' / 'restore')
+        would compute from stale memory and silently overwrite the remote
+        change for that quadrant."""
+        self._apply_raw(data)
 
     def set_quadrant(self, loc: str, items: list[str]):
         """Replace an entire quadrant's content with a single atomic write."""

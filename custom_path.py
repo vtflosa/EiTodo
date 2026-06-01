@@ -18,6 +18,29 @@ class Path:
         if not os.path.isfile(file):
             raise FileNotFoundError(f"File not found here : {file}")
 
+    @staticmethod
+    def resolve(path: str) -> str:
+        """Resolve a config path to an absolute one: relative paths are joined
+        with dir_path (the install folder) so the app does not depend on the
+        process CWD; absolute paths are returned unchanged. Inverse of
+        to_portable()."""
+        return path if os.path.isabs(path) else os.path.join(Path.dir_path, path)
+
+    @staticmethod
+    def to_portable(path: str) -> str:
+        """Return the value to store for a path in config.INI: relative to
+        dir_path when the path lives inside the install folder, else absolute.
+        Storing it relative keeps config.INI portable when the install folder is
+        shared/synced across machines with different absolute home paths — the
+        relative value resolves correctly on each one via resolve(). A path that
+        is already relative is returned unchanged. Inverse of resolve()."""
+        if not os.path.isabs(path):
+            return path
+        rel = os.path.relpath(path, Path.dir_path)
+        if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+            return path  # outside the install folder → keep absolute
+        return rel
+
     # path to script directory
     dir_path = os.path.dirname(os.path.abspath(__file__))
 
