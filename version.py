@@ -30,6 +30,8 @@ def version():
               "V 1.4 : right-click menus on quadrants\n"
               "V 1.5 : open-folder & interface-responsiveness menus + Ctrl+click to open links\n"
               "V 1.6 : robustness fixes — sync right-click data loss, done-panel HTML escaping & display cap,"
-              " backup name collisions, CWD-independent portable paths"
+              " backup name collisions, CWD-independent portable paths\n"
+              "V 1.7 : efficiency/leak fixes — drop unused log queue, free modal dialogs,"
+              " batch geometry config write, watchdog basename pre-filter, skip idle hourly backup"
               )
     return v_text.split("\n")[-1]

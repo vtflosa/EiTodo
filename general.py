@@ -85,6 +85,21 @@ def write_config_file(param: str, value: str, menu: str = "CONFIG"):
         config.write(f)
 
 
+def write_config_file_values(values: dict, menu: str = "CONFIG"):
+    """Set several params in `menu` with a single read + write of config.INI.
+    Use this instead of calling write_config_file once per key (which re-reads
+    and rewrites the whole file each time). Only the given keys are updated;
+    the rest of the section is left untouched (unlike write_config_file_menu,
+    which replaces the whole section)."""
+    config = configparser.ConfigParser()
+    with open(Path.config_file_path, "r", encoding="utf8") as f:
+        config.read_file(f)
+    for param, value in values.items():
+        config[menu][param] = value
+    with open(Path.config_file_path, "w", encoding="utf8") as f:
+        config.write(f)
+
+
 def write_config_file_menu(data: dict, menu: str = "CONFIG") -> None:
     config = configparser.ConfigParser()
     with open(Path.config_file_path, "r", encoding="utf8") as f:

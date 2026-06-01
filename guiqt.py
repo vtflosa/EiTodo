@@ -14,7 +14,7 @@ import time
 
 
 from custom_path import Path
-from general import (read_config_file, write_config_file,
+from general import (read_config_file, write_config_file, write_config_file_values,
                      is_empty, clean_line, clean_text, snapshot, get_raw,
                      URL_RE)
 from output import Output
@@ -991,8 +991,10 @@ class MainWindow(QMainWindow):
         locate_btn = box.addButton(self.tr("Pick a location…"), QMessageBox.ButtonRole.ActionRole)
         box.setDefaultButton(default_btn)
         box.exec()
+        clicked = box.clickedButton()
+        box.deleteLater()
 
-        if box.clickedButton() is locate_btn:
+        if clicked is locate_btn:
             self._locate_data_file_dialog()
         else:
             self._use_default_data_location()
@@ -1016,6 +1018,7 @@ class MainWindow(QMainWindow):
         box.exec()
 
         clicked = box.clickedButton()
+        box.deleteLater()
         if clicked is use_btn:
             self._use_existing_data_file(at_startup=True)
         elif clicked is create_btn:
@@ -1125,6 +1128,7 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(ok_btn)
         box.exec()
         clicked = box.clickedButton()
+        box.deleteLater()
         if clicked is open_btn:
             self._open_folder(os.path.dirname(abs_path))
         elif clicked is change_btn:
@@ -1163,6 +1167,7 @@ class MainWindow(QMainWindow):
         box.exec()
 
         clicked = box.clickedButton()
+        box.deleteLater()
         if clicked is use_btn:
             self._use_existing_data_file()
         elif clicked is move_btn:
@@ -1261,9 +1266,12 @@ class MainWindow(QMainWindow):
 
     def _change_font(self):
         dlg = FontPickerDialog(self._editor_font, self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        font = dlg.selected_font()       # read before deleteLater (widget still alive)
+        dlg.deleteLater()
+        if not accepted:
             return
-        self._editor_font = dlg.selected_font()
+        self._editor_font = font
         for editor in self._editors.values():
             editor.setFont(self._editor_font)
         for widget in self._done_widgets.values():
@@ -1393,9 +1401,11 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dlg.reject)
         layout.addWidget(buttons)
 
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        value = -1 if check.isChecked() else spin.value()   # read before deleteLater
+        dlg.deleteLater()
+        if not accepted:
             return
-        value = -1 if check.isChecked() else spin.value()
         write_config_file(param="backups_to_keep", value=str(value))
         from main import clean_old_backups
         clean_old_backups()
@@ -1460,9 +1470,11 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dlg.reject)
         layout.addWidget(buttons)
 
-        if dlg.exec() != QDialog.DialogCode.Accepted:
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        value = slider.value() * 100     # read before deleteLater
+        dlg.deleteLater()
+        if not accepted:
             return
-        value = slider.value() * 100
         write_config_file(param="debounce_ms", value=str(value))
         for editor in self._editors.values():
             editor._timer.setInterval(value)
@@ -1483,8 +1495,13 @@ class MainWindow(QMainWindow):
             existing.raise_()
             existing.activateWindow()
             return
-        self._help_dialog = HelpDialog(lang, self)
-        self._help_dialog.show()
+        dlg = HelpDialog(lang, self)
+        # Modeless: free it (and drop our reference) when closed, so repeated
+        # open/close doesn't pile up retained dialogs as children of the window.
+        dlg.finished.connect(dlg.deleteLater)
+        dlg.finished.connect(lambda *_: setattr(self, "_help_dialog", None))
+        self._help_dialog = dlg
+        dlg.show()
 
     def _quit(self):
         self._perform_shutdown_save()
@@ -1521,9 +1538,12 @@ class MainWindow(QMainWindow):
                          level="warning")
 
     def _hourly_backup(self):
-        """Flush any pending editor changes to disk, then run a backup."""
+        """Flush pending editor changes to disk, then back up — but only if the
+        data actually changed (locally or from another instance) since the last
+        backup, so an idle app does no periodic disk work."""
         self._flush_editors()
-        self._backup_param()
+        if self.todolist.consume_updated_since_backup():
+            self._backup_param()
 
     def _backup_param(self):
         """Save a timestamped copy of the param JSON into the save folder.
@@ -1532,8 +1552,8 @@ class MainWindow(QMainWindow):
         destination is Path.save_folder with name YYYY_MM_DD_HHMMSS_<name>.json.
 
         If the task data is unchanged since the most recent backup (sync
-        metadata excluded), no duplicate is created: the existing backup is
-        renamed to the new timestamp instead.
+        metadata excluded), no backup is made: the existing one keeps its real
+        timestamp (no duplicate, no artificial rename).
         """
         src = Path.json_file_path
         if not os.path.isfile(src):
@@ -1546,22 +1566,14 @@ class MainWindow(QMainWindow):
         last = _latest_backup(Path.save_folder, name)
         src_data = _task_data(src)
         if last is not None and src_data is not None and src_data == _task_data(last):
-            # No change since last backup: refresh its timestamp instead of duplicating
-            if os.path.abspath(last) != os.path.abspath(dest):
-                try:
-                    os.replace(last, dest)
-                    Output.print(f"No change since last backup: "
-                                 f"{os.path.basename(last)} → {os.path.basename(dest)}",
-                                 level="info")
-                except OSError as e:
-                    Output.print(f"Failed to rename backup: {e}", level="error")
+            # Identical content already backed up: no duplicate, and keep the
+            # existing backup's real timestamp (no artificial rename).
             return
 
         # Changed data: this second's backup must never overwrite an earlier
         # one. If the file already exists (two backups within the same second),
         # wait for the next second and recompute the name so each backup keeps
-        # its own file. copy2 is the only path that can clobber; the no-change
-        # branch above renames and is already collision-safe.
+        # its own file.
         while os.path.exists(dest):
             time.sleep(0.25)
             timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
@@ -1574,12 +1586,16 @@ class MainWindow(QMainWindow):
             Output.print(f"Param backup failed: {e}", level="error")
 
     def _save_geometry(self):
-        write_config_file("window_width",  str(self.width()))
-        write_config_file("window_height", str(self.height()))
-        write_config_file("window_x",      str(self.x()))
-        write_config_file("window_y",      str(self.y()))
+        # One read + one write of config.INI for all geometry keys, instead of
+        # five read+rewrite cycles (one per write_config_file call).
         screen = self.screen()
-        write_config_file("window_screen", screen.name() if screen else "")
+        write_config_file_values({
+            "window_width":  str(self.width()),
+            "window_height": str(self.height()),
+            "window_x":      str(self.x()),
+            "window_y":      str(self.y()),
+            "window_screen": screen.name() if screen else "",
+        })
 
     def _on_tray_activated(self, reason):
         if reason != QSystemTrayIcon.ActivationReason.Trigger:

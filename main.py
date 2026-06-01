@@ -13,18 +13,17 @@
 #   • Envoyer Eitodo à Oliv et puch'
 #    • Relire et corriger le readme github et faire traduc en accord
 #   • Audit robustesse du code
-#   • Audit efficacité utilisation des ressources
 #   • Audit sécurité des données
 #   • Tester insertion texte en plein milieu et effacer du texte - bug si on remplac equ'une seule ligne et manque la ligne en cours si plusieus lignes
 
 
-# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des problèmes d'efficacité ou d'utilisation de ressources
-# Si tu trouves des problèmes d'utilisation exessives de ressources ou de fuite de mémmoire, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
+# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des problèmes sécurité des données
+# Si tu trouves des problèmes de sécurité des données avec risque de perte des information stockées dans param.json, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
 # tu m'indiques comment tester et reproduire le bug en situation réelle avant de me proposer de corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
 # Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
 
 
-# todo autoupdate au démarrage dans un autre module
+# todo autoupdate au démarrage dans un autre module - quelle solution technique pour détecter une mise jour dans le repo et proposer au démarrage le téléchargement et la mise à jour
 
 # general imports
 import os

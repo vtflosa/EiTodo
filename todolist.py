@@ -56,23 +56,36 @@ class _StateChangeHandler(FileSystemEventHandler):
                  on_remote_change: Callable[[dict], None]):
         super().__init__()
         self._state_path = state_path.resolve()
+        # Cheap pre-filter (no syscall): the data file's own name in the watched
+        # directory. Lets us skip the realpath resolve() for the many unrelated
+        # sibling-file events (.tmp/.lock writes, cloud-sync temp files, …).
+        self._watched_name = state_path.name
         self._instance_id = instance_id
         self._on_remote_change = on_remote_change
         self._last_seen_at: float = 0.0
 
     def on_modified(self, event):
-        if Path(os.fsdecode(event.src_path)).resolve() == self._state_path:
-            self._process()
+        self._maybe_process(event.src_path)
 
     def on_created(self, event):
         # MegaSync (and similar clients) rename from outside the watched
         # directory; inotify sees no IN_MOVED_FROM, so watchdog reports a
         # FileCreatedEvent instead of FileMovedEvent.
-        if Path(os.fsdecode(event.src_path)).resolve() == self._state_path:
-            self._process()
+        self._maybe_process(event.src_path)
 
     def on_moved(self, event):
-        if Path(os.fsdecode(event.dest_path)).resolve() == self._state_path:
+        self._maybe_process(event.dest_path)
+
+    def _maybe_process(self, raw_path):
+        """Run _process() only for events about the data file. The basename check
+        first avoids the realpath resolve() for the many sibling-file events in
+        the watched directory; resolve() then confirms the exact path. (The
+        basename match assumes the data file is reached by its own name, i.e. not
+        via a differently-named symlink — an intentional simplification.)"""
+        path = os.fsdecode(raw_path)
+        if os.path.basename(path) != self._watched_name:
+            return
+        if Path(path).resolve() == self._state_path:
             self._process()
 
     def _process(self):
@@ -174,6 +187,11 @@ class ToDoList:
         self._version: int = 0
         self._updated_at: float = 0.0
         self._last_writer: str = ""
+        # Raised by _set_updated_at() on every state change (local write or
+        # adopted remote/disk state); cleared by consume_updated_since_backup()
+        # so the hourly backup runs only when something actually changed.
+        # load_initial_state() below flips it to True for the loaded state.
+        self._updated_since_backup: bool = False
 
         self._handler: Optional[_StateChangeHandler] = None
         self._observer: Optional[BaseObserver] = None
@@ -288,6 +306,17 @@ class ToDoList:
         self.todolist_dict[loc] = items
         self._write_locked(modified_locs={loc})
 
+    def consume_updated_since_backup(self) -> bool:
+        """Return whether the data changed (locally or from another instance)
+        since the last call, and reset the flag. Lets the hourly backup skip its
+        work entirely when nothing changed. Robust to remote changes because the
+        flag is raised in _set_updated_at(), which both the local write path
+        (_build_payload) and the disk/remote adoption path (_apply_raw) go
+        through."""
+        changed = self._updated_since_backup
+        self._updated_since_backup = False
+        return changed
+
     # ------------------------------------------------------------------
     # Private — in-memory operations (no I/O)
     # ------------------------------------------------------------------
@@ -348,10 +377,20 @@ class ToDoList:
                          level="error")
             return {}
 
+    def _set_updated_at(self, value: float):
+        """Single place that records a new updated_at AND flags the state as
+        changed since the last backup. Called wherever the state actually
+        changes: a local write (_build_payload, value=time.time()) or adopting
+        fresher disk/remote data (_apply_raw, value=the on-disk updated_at — NOT
+        a fresh local time, so cross-instance comparisons in _refresh and the
+        watchdog stay correct). Cleared only by consume_updated_since_backup()."""
+        self._updated_at = value
+        self._updated_since_backup = True
+
     def _apply_raw(self, data: dict):
         """Populate local state from a raw JSON dict."""
         self._version = data.get("version", 0)
-        self._updated_at = data.get("updated_at", 0.0)
+        self._set_updated_at(data.get("updated_at", 0.0))
         self._last_writer = data.get("last_writer", "")
         self.todolist_dict = {k: v for k, v in data.items() if k not in self._META_KEYS}
 
@@ -368,7 +407,7 @@ class ToDoList:
     def _build_payload(self) -> dict:
         """Assemble the full JSON payload: metadata + task lists."""
         self._version += 1
-        self._updated_at = time.time()
+        self._set_updated_at(time.time())
         self._last_writer = self.instance_id
         return {
             "version": self._version,
