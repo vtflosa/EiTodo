@@ -196,6 +196,15 @@ class ToDoList:
         self._handler: Optional[_StateChangeHandler] = None
         self._observer: Optional[BaseObserver] = None
         self._on_remote_change_cb: Optional[Callable[[dict], None]] = None
+        # Invoked with the error message when a local write to disk fails, so the
+        # GUI can warn the user instead of losing the edit silently.
+        self._on_write_error_cb: Optional[Callable[[str], None]] = None
+        # Set when a write fails: the in-memory state is then ahead of disk.
+        # `_pending_locs` accumulates the modified quadrants so flush_pending_write()
+        # can retry persisting them (e.g. before the shutdown backup) and merge
+        # correctly against any meanwhile remote change.
+        self._write_failed: bool = False
+        self._pending_locs: set[str] = set()
 
         self.load_initial_state()
 
@@ -286,6 +295,12 @@ class ToDoList:
         self.stop_watcher()
         self._start_watcher(callback)
 
+    def set_on_write_error(self, callback: Callable[[str], None]):
+        """Register a callback invoked with the error message when a local write
+        to disk fails. Called on the GUI thread (local writes run there), so the
+        GUI can notify the user directly or via a signal."""
+        self._on_write_error_cb = callback
+
     def apply_remote_state(self, data: dict):
         """Adopt the full raw state pushed by a remote change so the in-memory
         state stays in sync with what another instance just wrote to disk:
@@ -328,6 +343,20 @@ class ToDoList:
         changed = self._updated_since_backup
         self._updated_since_backup = False
         return changed
+
+    def flush_pending_write(self) -> bool:
+        """If a previous write failed, retry persisting the current in-memory
+        state to disk. Call it before a backup (hourly tick, shutdown save) so a
+        transiently failed edit gets a fresh chance to reach disk and the backup
+        captures the up-to-date content. Returns True when nothing is pending or
+        the retry succeeds, False if it still fails (the GUI was already warned
+        via the write-error callback). Retries the originally-pending quadrants,
+        so a meanwhile remote change to other quadrants is still merged in."""
+        if not self._write_failed:
+            return True
+        Output.print("Retrying a previously failed data write…", level="info")
+        self._write_locked(modified_locs=set(self._pending_locs))
+        return not self._write_failed
 
     # ------------------------------------------------------------------
     # Private — in-memory operations (no I/O)
@@ -463,11 +492,28 @@ class ToDoList:
 
                 payload = self._build_payload()
 
-                self._tmp_path.write_text(
-                    json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False),
-                    encoding="utf8",
-                )
-                os.replace(self._tmp_path, self.path)
+                try:
+                    self._tmp_path.write_text(
+                        json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False),
+                        encoding="utf8",
+                    )
+                    os.replace(self._tmp_path, self.path)
+                    # Success persists the WHOLE in-memory state, so any earlier
+                    # failed edit is now on disk too: clear the pending flag.
+                    self._write_failed = False
+                    self._pending_locs = set()
+                except OSError as e:
+                    # Disk full / permission / I/O error: param.json keeps its
+                    # previous content (atomic write never half-wrote it). Surface
+                    # it so the edit is not lost silently, and remember the pending
+                    # quadrants so flush_pending_write() can retry from memory.
+                    self._write_failed = True
+                    self._pending_locs |= modified_locs
+                    Output.print(f"Failed to write data file ({self.path}): {e}",
+                                 level="error")
+                    if self._on_write_error_cb is not None:
+                        self._on_write_error_cb(str(e))
+                    return
 
             finally:
                 fcntl.flock(lock_fh, fcntl.LOCK_UN)

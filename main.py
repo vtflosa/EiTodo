@@ -9,26 +9,6 @@
         ["U&I", "U&I_done", "NU&I", "NU&I_done", "U&Un", "U&Un_done", "NU&Un", "NU&Un_done"]
 """
 
-# Todo tout relire pour vérifier
-#   • Envoyer Eitodo à Oliv et puch'
-#    • Relire et corriger le readme github et faire traduc en accord
-#   • Audit robustesse du code
-#   • Audit sécurité des données
-
-
-
-# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des problèmes sécurité des données
-# Si tu trouves des problèmes de sécurité des données avec risque de perte des information stockées dans param.json, tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
-# tu m'indiques comment tester et reproduire le bug en situation réelle avant de me proposer de corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
-# Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
-
-
-# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des bugs possibles
-# Si tu trouves des problèmes , tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
-# tu m'indiques comment tester et reproduire le bug en situation réelle avant de me proposer de corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
-# Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
-
-
 # general imports
 import os
 import re
@@ -49,7 +29,8 @@ from version import version
 from general import (read_config_file, read_config_file_menu,
                      write_config_file, write_config_file_menu,
                      write_config_file_values, get_timestamp_with_date,
-                     config_is_usable, reset_config)
+                     config_is_usable, reset_config,
+                     salvage_path_values, backup_corrupt_config)
 from todolist import ToDoList
 from guiqt import MainWindow
 from autoupdate import STARTUP_CHECK_DEFAULT_DELAY_S
@@ -219,25 +200,50 @@ def clean_old_backups():
                      level="info")
 
 
+def ensure_usable_config() -> None:
+    """Recreate config.INI from defaults when it is missing, empty, or corrupt
+    (a partial write, a bad manual edit…). MUST run before anything reads the
+    config (e.g. _install_translators), otherwise an unparseable file raises and
+    the app fails to start. Self-heals across launches: an interrupted reset
+    leaves an unusable file that the next launch recreates.
+
+    The data-file location lives only in config.INI, so salvage it from the
+    corrupt file first: if it still resolves to a real file, keep pointing at it
+    (a relocated data file is reloaded instead of being replaced by example
+    tasks) and mark it as not-a-first-launch. The old file is kept aside
+    (config.INI.bak-<ts>) for manual recovery of the other settings.
+    """
+    if config_is_usable():
+        return
+    salvaged_json = salvage_path_values().get("json_file_path")
+    backup_corrupt_config()
+    cfg_section = dict(_DEFAULT_CONFIG)
+    path_section = dict(_DEFAULT_PATH)
+    if salvaged_json and os.path.isfile(Path.resolve(salvaged_json)):
+        path_section["json_file_path"] = salvaged_json
+        cfg_section["first_launch"] = "False"
+        # first_launch=False skips first_launch()'s folder creation below, so
+        # ensure the working folders exist (they normally do after a real install).
+        for folder in (_DEFAULT_PATH["log_folder_path"],
+                       _DEFAULT_PATH["save_folder_path"]):
+            os.makedirs(os.path.join(Path.dir_path, folder), exist_ok=True)
+        Output.print("config.INI corrupt — recreating, kept data pointer "
+                     f"{salvaged_json!r}", level="warning")
+    else:
+        Output.print("config.INI missing or corrupt — recreating defaults",
+                     level="warning")
+    reset_config({"CONFIG": cfg_section, "PATH": path_section})
+
+
 def first_launch() -> bool:
     """If first_launch=True in config.INI: create the working folders and an
     initial param.json, then return True (otherwise False). All default
     folder/file names come from _DEFAULT_PATH, the single source of truth.
 
-    On every launch, also backfill any CONFIG defaults missing from an older
-    config.INI so clients upgrading from a previous version stay compatible.
+    Assumes config.INI is usable (ensure_usable_config() has run). On every
+    launch, also backfill any CONFIG defaults missing from an older config.INI
+    so clients upgrading from a previous version stay compatible.
     """
-
-    # Recreate config.INI from defaults when it is missing, empty, or corrupt
-    # (a partial write, a bad manual edit…). Without this, the read below would
-    # raise before main()'s try/except and the app would fail to start; here it
-    # is reseeded in one shot instead. This also self-heals across launches: an
-    # interrupted reset leaves an unusable file that the next launch recreates.
-    if not config_is_usable():
-        Output.print("config.INI missing or corrupt — recreating defaults",
-                     level="warning")
-        reset_config({"CONFIG": _DEFAULT_CONFIG, "PATH": _DEFAULT_PATH})
-
     cfg = read_config_file_menu(menu="CONFIG")
 
     # Backward compatibility: a config.INI written by an older version lacks
@@ -358,6 +364,12 @@ def main():
     os.environ.pop("VIRTUAL_ENV", None)
     os.environ.pop("VIRTUAL_ENV_PROMPT", None)
 
+    # Make config.INI usable before ANYTHING reads it: _install_translators
+    # below reads it, and an unparseable file would raise there (before main()'s
+    # try/except) and crash the app. ensure_usable_config() recreates it from
+    # defaults if needed, preserving the salvaged data-file location.
+    ensure_usable_config()
+
     # QApplication and translators must exist before first_launch(): the
     # default-task strings written into the initial param.json go through
     # QCoreApplication.translate() via _default_param(), and that lookup
@@ -366,8 +378,9 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     resolved_lang = _install_translators(app)
 
-    # first_launch() creates the config file and working folders; only then can
-    # set_and_check_paths() resolve Path.log_folder for the logger below.
+    # first_launch() creates the working folders and default data file when the
+    # config flags a first launch; only then can set_and_check_paths() resolve
+    # Path.log_folder for the logger below.
     first_launch_start = first_launch()
     json_exists = set_and_check_paths()
 

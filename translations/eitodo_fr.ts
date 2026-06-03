@@ -4,12 +4,12 @@
 <context>
     <name>DefaultTasks</name>
     <message>
-        <location filename="../main.py" line="98" />
+        <location filename="../main.py" line="85" />
         <source>Write tasks to do here</source>
         <translation>Ecrire les tâches à faire</translation>
     </message>
     <message>
-        <location filename="../main.py" line="99" />
+        <location filename="../main.py" line="86" />
         <source>Finished tasks appear here</source>
         <translation>Ici sont les tâches réalisées</translation>
     </message>
@@ -92,256 +92,268 @@
 </context><context>
     <name>MainWindow</name>
     <message>
-        <location filename="../guiqt.py" line="705" />
+        <location filename="../guiqt.py" line="715" />
         <source>Clear all finished tasks</source>
         <translation>Effacer toutes les tâches finies</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1175" />
-        <location filename="../guiqt.py" line="1169" />
-        <location filename="../guiqt.py" line="1162" />
-        <location filename="../guiqt.py" line="1154" />
-        <location filename="../guiqt.py" line="709" />
+        <location filename="../guiqt.py" line="1228" />
+        <location filename="../guiqt.py" line="1222" />
+        <location filename="../guiqt.py" line="1215" />
+        <location filename="../guiqt.py" line="1207" />
+        <location filename="../guiqt.py" line="719" />
         <source>Load a backup</source>
         <translation>Charger une sauvegarde</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="713" />
+        <location filename="../guiqt.py" line="723" />
         <source>Number of backups to keep…</source>
         <translation>Nombre de sauvegardes à conserver…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="717" />
+        <location filename="../guiqt.py" line="727" />
         <source>Open backups folder</source>
         <translation>Ouvrir le dossier des sauvegardes</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="721" />
+        <location filename="../guiqt.py" line="731" />
         <source>Data location…</source>
         <translation>Emplacement des données…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="724" />
+        <location filename="../guiqt.py" line="734" />
         <source>Change font…</source>
         <translation>Changer la police…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="728" />
+        <location filename="../guiqt.py" line="738" />
         <source>Interface responsiveness…</source>
         <translation>Réactivité de l'interface…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1547" />
-        <location filename="../guiqt.py" line="737" />
+        <location filename="../guiqt.py" line="1600" />
+        <location filename="../guiqt.py" line="747" />
         <source>Change language</source>
         <translation>Changer la langue</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="761" />
+        <location filename="../guiqt.py" line="771" />
         <source>Update</source>
         <translation>Mise à jour</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="763" />
+        <location filename="../guiqt.py" line="773" />
         <source>Check automatically at startup</source>
         <translation>Vérifier automatiquement au démarrage</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="775" />
+        <location filename="../guiqt.py" line="785" />
         <source>Check for updates now</source>
         <translation>Rechercher les mises à jour maintenant</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="783" />
+        <location filename="../guiqt.py" line="793" />
         <source>Hidden at startup</source>
         <translation>Caché au démarrage</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="793" />
+        <location filename="../guiqt.py" line="803" />
         <source>Help</source>
         <translation>Aide</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="796" />
+        <location filename="../guiqt.py" line="806" />
         <source>Quit</source>
         <translation>Quitter</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="853" />
+        <location filename="../guiqt.py" line="890" />
         <source>Update check</source>
         <translation>Vérification des mises à jour</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="854" />
+        <location filename="../guiqt.py" line="891" />
         <source>Could not check for updates. Please try again later.</source>
         <translation>Impossible de vérifier les mises à jour. Veuillez réessayer plus tard.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="862" />
+        <location filename="../guiqt.py" line="899" />
         <source>Up to date</source>
         <translation>À jour</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="863" />
+        <location filename="../guiqt.py" line="900" />
         <source>EiTodo {0} is the latest version.</source>
         <translation>EiTodo {0} est la dernière version.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="882" />
+        <location filename="../guiqt.py" line="919" />
         <source>Update available</source>
         <translation>Mise à jour disponible</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="883" />
+        <location filename="../guiqt.py" line="920" />
         <source>A new version of EiTodo is available.</source>
         <translation>Une nouvelle version d'EiTodo est disponible.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="884" />
+        <location filename="../guiqt.py" line="921" />
         <source>Installed version: {0}
 Available version: {1}</source>
         <translation>Version installée : {0}
 Version disponible : {1}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="887" />
+        <location filename="../guiqt.py" line="924" />
         <source>Update now</source>
         <translation>Mettre à jour maintenant</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="889" />
+        <location filename="../guiqt.py" line="926" />
         <source>Ignore this version</source>
         <translation>Ignorer cette version</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="891" />
+        <location filename="../guiqt.py" line="928" />
         <source>Later</source>
         <translation>Plus tard</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="964" />
+        <location filename="../guiqt.py" line="1001" />
         <source>Manual update required</source>
         <translation>Mise à jour manuelle requise</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="965" />
+        <location filename="../guiqt.py" line="1002" />
         <source>This update changes EiTodo's dependencies, so it can't be applied automatically. The download page will open — please reinstall to finish updating.</source>
         <translation>Cette mise à jour modifie les dépendances d'EiTodo, elle ne peut donc pas être appliquée automatiquement. La page de téléchargement va s'ouvrir — veuillez réinstaller pour terminer la mise à jour.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="971" />
+        <location filename="../guiqt.py" line="1008" />
         <source>Update failed</source>
         <translation>Échec de la mise à jour</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="972" />
+        <location filename="../guiqt.py" line="1009" />
         <source>The update could not be downloaded or applied. Nothing was changed. Please try again later, or reinstall manually.</source>
         <translation>La mise à jour n'a pas pu être téléchargée ni appliquée. Rien n'a été modifié. Veuillez réessayer plus tard, ou réinstaller manuellement.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1154" />
+        <location filename="../guiqt.py" line="1187" />
+        <source>Save failed</source>
+        <translation>Échec de l'enregistrement</translation>
+    </message>
+    <message>
+        <location filename="../guiqt.py" line="1188" />
+        <source>Could not save your tasks to disk:
+{0}</source>
+        <translation>Impossible d'enregistrer vos tâches sur le disque :
+{0}</translation>
+    </message>
+    <message>
+        <location filename="../guiqt.py" line="1207" />
         <source>JSON backups (*.json)</source>
         <translation>Sauvegardes JSON (*.json)</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1163" />
+        <location filename="../guiqt.py" line="1216" />
         <source>Cannot read the backup:
 {0}</source>
         <translation>Impossible de lire la sauvegarde :
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1170" />
+        <location filename="../guiqt.py" line="1223" />
         <source>Invalid backup: the file is malformed:
 </source>
         <translation>Sauvegarde invalide : le fichier est incorrect :
 </translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1176" />
+        <location filename="../guiqt.py" line="1229" />
         <source>Replace all current tasks with the content of
 {0}?</source>
         <translation>Remplacer toutes les tâches actuelles par le contenu de
 {0} ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1344" />
-        <location filename="../guiqt.py" line="1230" />
-        <location filename="../guiqt.py" line="1207" />
+        <location filename="../guiqt.py" line="1397" />
+        <location filename="../guiqt.py" line="1283" />
+        <location filename="../guiqt.py" line="1260" />
         <source>Data location</source>
         <translation>Emplacement des données</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1208" />
+        <location filename="../guiqt.py" line="1261" />
         <source>Where do you want to store the data?</source>
         <translation>Où souhaitez-vous stocker les données ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1209" />
+        <location filename="../guiqt.py" line="1262" />
         <source>Use the default location, or point to an existing data file?</source>
         <translation>Utiliser l'emplacement par défaut, ou indiquer un fichier de données existant ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1212" />
+        <location filename="../guiqt.py" line="1265" />
         <source>Default location</source>
         <translation>Emplacement par défaut</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1213" />
+        <location filename="../guiqt.py" line="1266" />
         <source>Pick a location…</source>
         <translation>Indiquer l'emplacement…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1231" />
+        <location filename="../guiqt.py" line="1284" />
         <source>Pick a data location</source>
         <translation>Indiquer l'emplacement des données</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1232" />
+        <location filename="../guiqt.py" line="1285" />
         <source>Point to an existing data file, or create a new default file in another folder?</source>
         <translation>Pointer vers un fichier de données existant, ou créer un nouveau fichier par défaut dans un autre dossier ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1236" />
+        <location filename="../guiqt.py" line="1289" />
         <source>Existing file…</source>
         <translation>Fichier existant…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1237" />
+        <location filename="../guiqt.py" line="1290" />
         <source>Create a default file…</source>
         <translation>Créer un fichier par défaut…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1387" />
-        <location filename="../guiqt.py" line="1238" />
+        <location filename="../guiqt.py" line="1440" />
+        <location filename="../guiqt.py" line="1291" />
         <source>Cancel</source>
         <translation>Annuler</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1440" />
-        <location filename="../guiqt.py" line="1266" />
+        <location filename="../guiqt.py" line="1493" />
+        <location filename="../guiqt.py" line="1319" />
         <source>JSON files (*.json)</source>
         <translation>Fichiers JSON (*.json)</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1277" />
+        <location filename="../guiqt.py" line="1330" />
         <source>Cannot create the destination folder:
 {0}</source>
         <translation>Impossible de créer le dossier de destination :
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1310" />
+        <location filename="../guiqt.py" line="1363" />
         <source>Create a data file</source>
         <translation>Créer un fichier de données</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1341" />
+        <location filename="../guiqt.py" line="1394" />
         <source>(not set)</source>
         <translation>(non défini)</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1345" />
+        <location filename="../guiqt.py" line="1398" />
         <source>Current data file:
 
 {0}
@@ -352,75 +364,75 @@ Version disponible : {1}</translation>
 </translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1364" />
-        <location filename="../guiqt.py" line="1346" />
+        <location filename="../guiqt.py" line="1417" />
+        <location filename="../guiqt.py" line="1399" />
         <source>Open folder</source>
         <translation>Ouvrir le dossier</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1348" />
+        <location filename="../guiqt.py" line="1401" />
         <source>Change location…</source>
         <translation>Changer l'emplacement…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1365" />
+        <location filename="../guiqt.py" line="1418" />
         <source>Folder not found:
 {0}</source>
         <translation>Dossier introuvable :
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1431" />
-        <location filename="../guiqt.py" line="1379" />
+        <location filename="../guiqt.py" line="1484" />
+        <location filename="../guiqt.py" line="1432" />
         <source>Change data location</source>
         <translation>Changer l'emplacement des données</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1380" />
+        <location filename="../guiqt.py" line="1433" />
         <source>What do you want to do?</source>
         <translation>Que voulez-vous faire ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1381" />
+        <location filename="../guiqt.py" line="1434" />
         <source>Point to an existing data file to use, or move the current file to a new location and name?</source>
         <translation>Indiquer un fichier de données existant à utiliser, ou déplacer le fichier actuel vers un nouvel emplacement et nom ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1385" />
+        <location filename="../guiqt.py" line="1438" />
         <source>Point to an existing file…</source>
         <translation>Indiquer un fichier existant…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1386" />
+        <location filename="../guiqt.py" line="1439" />
         <source>Move the current file…</source>
         <translation>Déplacer le fichier actuel…</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1401" />
+        <location filename="../guiqt.py" line="1454" />
         <source>Move the data file</source>
         <translation>Déplacer le fichier de données</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1418" />
+        <location filename="../guiqt.py" line="1471" />
         <source>Move failed:
 {0}</source>
         <translation>Échec du déplacement :
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1447" />
+        <location filename="../guiqt.py" line="1500" />
         <source>Cannot read the file:
 {0}</source>
         <translation>Impossible de lire le fichier :
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1453" />
+        <location filename="../guiqt.py" line="1506" />
         <source>Invalid file: it does not contain a valid task matrix.</source>
         <translation>Fichier invalide : il ne contient pas une matrice de tâches valide.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1459" />
+        <location filename="../guiqt.py" line="1512" />
         <source>Use this file as the new data location and load its content?
 
 {0}</source>
@@ -429,49 +441,49 @@ Version disponible : {1}</translation>
 {0}</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1548" />
+        <location filename="../guiqt.py" line="1601" />
         <source>Restart EiTodo to apply the new language?</source>
         <translation>Redémarrer EiTodo pour appliquer la nouvelle langue ?</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1603" />
+        <location filename="../guiqt.py" line="1656" />
         <source>Number of backups to keep</source>
         <translation>Nombre de sauvegardes à conserver</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1606" />
+        <location filename="../guiqt.py" line="1659" />
         <source>Keep up to this many timestamped backups (minimum 20):</source>
         <translation>Conserver au maximum ce nombre de sauvegardes horodatées (minimum 20) :</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1613" />
+        <location filename="../guiqt.py" line="1666" />
         <source>Unlimited (keep every backup)</source>
         <translation>Illimité (conserver toutes les sauvegardes)</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1651" />
+        <location filename="../guiqt.py" line="1704" />
         <source>Interface responsiveness</source>
         <translation>Réactivité de l'interface</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1653" />
+        <location filename="../guiqt.py" line="1706" />
         <source>Delay before typed changes are formatted and saved.
 Left: more responsive. Right: lighter on resources.</source>
         <translation>Délai avant que les modifications saisies soient formatées et enregistrées.
 Gauche : plus réactif. Droite : plus léger pour les ressources.</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1671" />
+        <location filename="../guiqt.py" line="1724" />
         <source>Default (400 ms)</source>
         <translation>Défaut (400 ms)</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1675" />
+        <location filename="../guiqt.py" line="1728" />
         <source>More responsive</source>
         <translation>Plus réactif</translation>
     </message>
     <message>
-        <location filename="../guiqt.py" line="1676" />
+        <location filename="../guiqt.py" line="1729" />
         <source>Lighter</source>
         <translation>Plus léger</translation>
     </message>

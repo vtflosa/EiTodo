@@ -3,6 +3,7 @@
 """ general helper functions"""
 
 # general import
+import os
 import re
 import datetime
 import configparser
@@ -132,6 +133,41 @@ def reset_config(sections: dict[str, dict]) -> None:
         config[menu] = data
     with open(Path.config_file_path, "w", encoding="utf8") as f:
         config.write(f)
+
+
+# Tolerant line match for the [PATH] keys, used to salvage them from a config.INI
+# that configparser rejects (the data-file location lives only in config.INI).
+_PATH_SALVAGE_RE = re.compile(
+    r"^\s*(json_file_path|log_folder_path|save_folder_path)\s*=\s*(.+?)\s*$")
+
+
+def salvage_path_values() -> dict:
+    """Best-effort recovery of the [PATH] values from a config.INI that
+    config_is_usable() rejects (corrupt / partly written): read it line by line
+    so the keys are found even when the [PATH] header is broken. Returns {} if
+    nothing is found. Lets startup keep pointing at a relocated data file instead
+    of losing it when the config is recreated."""
+    values: dict[str, str] = {}
+    try:
+        with open(Path.config_file_path, "r", encoding="utf8") as f:
+            for line in f:
+                match = _PATH_SALVAGE_RE.match(line)
+                if match:
+                    values[match.group(1)] = match.group(2)
+    except OSError:
+        return {}
+    return values
+
+
+def backup_corrupt_config() -> None:
+    """Rename an unusable config.INI aside (config.INI.bak-<timestamp>) before it
+    is recreated, so its content (other settings) stays available for manual
+    recovery. Best-effort: ignores errors and does nothing if the file is absent."""
+    try:
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.rename(Path.config_file_path, f"{Path.config_file_path}.bak-{stamp}")
+    except OSError:
+        pass
 
 
 # ####################### END OFconfig.INI read and write  #########################################

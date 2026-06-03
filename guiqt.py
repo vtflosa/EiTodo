@@ -621,6 +621,9 @@ class MainWindow(QMainWindow):
     # GUI thread: "restart" (deployed, restart now), "manual" (dependencies
     # changed → reinstall) or "error" (download/deploy failed, nothing changed).
     _update_finished = pyqtSignal(str)
+    # Carries a "could not save to disk" error message so it is shown on the GUI
+    # thread (via the tray) instead of the edit being lost silently.
+    _write_error = pyqtSignal(str)
 
     def __init__(self, todolist: ToDoList, debounce_ms: int = 500,
                  width: int = 1000, height: int = 1000,
@@ -667,6 +670,11 @@ class MainWindow(QMainWindow):
         # Route remote-file changes (background thread) safely to the main thread
         todolist.set_on_remote_change(self._remote_change.emit)
         self._remote_change.connect(self._on_remote_file_change)
+
+        # Surface disk-write failures (disk full, permissions) to the user via
+        # the tray, so an edit that could not be saved is not lost silently.
+        self._write_error.connect(self._on_write_error)
+        todolist.set_on_write_error(self._write_error.emit)
 
         # Update check: the worker thread emits _update_checked, handled on the
         # GUI thread. The flag stops overlapping checks.
@@ -1170,6 +1178,16 @@ class MainWindow(QMainWindow):
         for loc, widget in self._done_widgets.items():
             widget.set_items(data.get(loc, []))
 
+    def _on_write_error(self, msg: str):
+        """A write to the data file failed (disk full, permissions, I/O error):
+        warn via the tray so the user knows their last change was not saved.
+        param.json keeps its previous content; the next successful write
+        re-persists the change."""
+        self._tray.showMessage(
+            self.tr("Save failed"),
+            self.tr("Could not save your tasks to disk:\n{0}").format(msg),
+            QSystemTrayIcon.MessageIcon.Warning)
+
     def _clear_all_done(self):
         for loc_done, widget in self._done_widgets.items():
             self.todolist.set_quadrant(loc_done, [])
@@ -1353,7 +1371,9 @@ class MainWindow(QMainWindow):
 
         # Force a fresh default at dest (the save dialog already confirmed any
         # overwrite); set_path then seeds the missing file with the example tasks.
+        # Back up the destination first so overwriting it never loses data.
         if os.path.exists(dest):
+            self._backup_file_to_save(dest)
             self._remove_data_file(dest)
         self._switch_to_data_file(dest)
 
@@ -1443,6 +1463,10 @@ class MainWindow(QMainWindow):
         dest = self._ask_destination_path(title, start_path)
         if dest is None or os.path.abspath(dest) == os.path.abspath(src):
             return  # cancelled or same file
+
+        # If dest is an existing data file, the move would overwrite it: back it
+        # up first so its content stays recoverable.
+        self._backup_file_to_save(dest)
 
         # Stop pending timers and the watcher before moving the backing file.
         self._stop_editor_timers()
@@ -1787,6 +1811,9 @@ class MainWindow(QMainWindow):
         self._shutdown_saved = True
         self._stop_editor_timers()
         self._flush_editors()
+        # Last chance to persist an edit whose write failed earlier: retry from
+        # memory before the backup, so the backup captures the up-to-date content.
+        self.todolist.flush_pending_write()
         self._backup_param()
         try:
             self._save_geometry()
@@ -1799,6 +1826,9 @@ class MainWindow(QMainWindow):
         data actually changed (locally or from another instance) since the last
         backup, so an idle app does no periodic disk work."""
         self._flush_editors()
+        # Retry a previously failed write (e.g. disk freed up since): recovers
+        # automatically and keeps the backup below in sync with memory.
+        self.todolist.flush_pending_write()
         if self.todolist.consume_updated_since_backup():
             self._backup_param()
 
@@ -1816,31 +1846,38 @@ class MainWindow(QMainWindow):
         if not os.path.isfile(src):
             Output.print(f"Param backup skipped: file not found: {src}", level="error")
             return
+        # Skip if identical to the most recent backup (no duplicate, no rename).
         name = os.path.splitext(os.path.basename(src))[0]
-        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
-        dest = os.path.join(Path.save_folder, f"{timestamp}_{name}.json")
-
         last = _latest_backup(Path.save_folder, name)
         src_data = _task_data(src)
         if last is not None and src_data is not None and src_data == _task_data(last):
-            # Identical content already backed up: no duplicate, and keep the
-            # existing backup's real timestamp (no artificial rename).
             return
+        self._save_copy(src)
 
-        # Changed data: this second's backup must never overwrite an earlier
-        # one. If the file already exists (two backups within the same second),
-        # wait for the next second and recompute the name so each backup keeps
-        # its own file.
+    def _save_copy(self, src: str):
+        """Copy `src` into the save folder under a unique timestamped name
+        (YYYY_MM_DD_HHMMSS_<name>.json). On a same-second name collision, wait for
+        the next second so an earlier backup is never overwritten. Best-effort:
+        logs on failure."""
+        name = os.path.splitext(os.path.basename(src))[0]
+        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
+        dest = os.path.join(Path.save_folder, f"{timestamp}_{name}.json")
         while os.path.exists(dest):
             time.sleep(0.25)
             timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H%M%S")
             dest = os.path.join(Path.save_folder, f"{timestamp}_{name}.json")
-
         try:
             shutil.copy2(src, dest)
             Output.print(f"Param backup: {dest}", level="info")
         except OSError as e:
             Output.print(f"Param backup failed: {e}", level="error")
+
+    def _backup_file_to_save(self, path: str):
+        """Back up `path` into the save folder before it is overwritten by a
+        move/create, if it exists and holds readable task data — so the
+        destination's content stays recoverable."""
+        if os.path.isfile(path) and _task_data(path) is not None:
+            self._save_copy(path)
 
     def _save_geometry(self):
         # One read + one write of config.INI for all geometry keys, instead of

@@ -36,6 +36,8 @@ def version():
               "V 1.8 : one-line curl install command + autostart selected by default\n"
               "V 1.9 : atomic task moves — single write for move/mark-done/restore (no item loss)\n"
               "V 2.0 : in-app auto-update — GitHub version check, ignore/later, delayed startup"
-              " check, in-place file update + restart; tolerant config startup (recreate if corrupt)"
+              " check, in-place file update + restart; tolerant config startup (recreate if corrupt)\n"
+              "V 2.1 : data-loss safeguards — salvage data path on config recovery, retry failed writes, "
+              "back up a file before overwrite"
               )
     return v_text.split("\n")[-1]
