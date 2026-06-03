@@ -14,7 +14,7 @@
 #    • Relire et corriger le readme github et faire traduc en accord
 #   • Audit robustesse du code
 #   • Audit sécurité des données
-#   • Tester insertion texte en plein milieu et effacer du texte - bug si on remplac equ'une seule ligne et manque la ligne en cours si plusieus lignes
+
 
 
 # peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des problèmes sécurité des données
@@ -23,7 +23,11 @@
 # Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
 
 
-# todo autoupdate au démarrage dans un autre module - quelle solution technique pour détecter une mise jour dans le repo et proposer au démarrage le téléchargement et la mise à jour
+# peux tu faire un audit complet du code en commençant par lire tous les fichiers pour comprendre le fonctionnement puis chercher s'il existe des bugs possibles
+# Si tu trouves des problèmes , tu ne les corrige pas mais tu les classes en fonction de la gravité et de l'importance et tu documentes l'endroit du bug et les conséquences possibles.
+# tu m'indiques comment tester et reproduire le bug en situation réelle avant de me proposer de corriger les bugs un par un si je le souhaite ou omettre ce que je ne souhaite pas corriger.
+# Pour la correction il faudra bien vérifier que ça ne casse rien dans la logique ni le fonctionnement existant.
+
 
 # general imports
 import os
@@ -44,9 +48,11 @@ from output import Output
 from version import version
 from general import (read_config_file, read_config_file_menu,
                      write_config_file, write_config_file_menu,
-                     get_timestamp_with_date)
+                     write_config_file_values, get_timestamp_with_date,
+                     config_is_usable, reset_config)
 from todolist import ToDoList
 from guiqt import MainWindow
+from autoupdate import STARTUP_CHECK_DEFAULT_DELAY_S
 
 
 _DEFAULT_CONFIG = {
@@ -63,6 +69,16 @@ _DEFAULT_CONFIG = {
     "font_size": "10",
     # UI language code, e.g. 'fr', 'en'. Empty = auto-detect from system locale.
     "language": "",
+    # Check GitHub for a newer version at startup and offer to update.
+    "auto_update": "true",
+    # Seconds to wait after launch before that automatic check, so the machine
+    # can finish booting and the user get going first. Hand-editable; ignored
+    # when auto_update is false, and never modified by the menu toggle.
+    "auto_update_delay": str(STARTUP_CHECK_DEFAULT_DELAY_S),
+    # A release the user chose to ignore. "" means nothing is ignored; otherwise
+    # a dotted number X.Y.Z. That exact remote version is no longer proposed, but
+    # a strictly newer one still is. Cleared back to "" once an update completes.
+    "ignored_version": "",
 }
 
 _DEFAULT_PATH = {
@@ -207,15 +223,34 @@ def first_launch() -> bool:
     """If first_launch=True in config.INI: create the working folders and an
     initial param.json, then return True (otherwise False). All default
     folder/file names come from _DEFAULT_PATH, the single source of truth.
+
+    On every launch, also backfill any CONFIG defaults missing from an older
+    config.INI so clients upgrading from a previous version stay compatible.
     """
 
-    # check if this is the first launch
-    if not os.path.isfile(Path.config_file_path):
-        open(Path.config_file_path, "w", encoding="utf8").close()
-        write_config_file_menu(menu="CONFIG", data=_DEFAULT_CONFIG)
-        write_config_file_menu(menu="PATH", data=_DEFAULT_PATH)
+    # Recreate config.INI from defaults when it is missing, empty, or corrupt
+    # (a partial write, a bad manual edit…). Without this, the read below would
+    # raise before main()'s try/except and the app would fail to start; here it
+    # is reseeded in one shot instead. This also self-heals across launches: an
+    # interrupted reset leaves an unusable file that the next launch recreates.
+    if not config_is_usable():
+        Output.print("config.INI missing or corrupt — recreating defaults",
+                     level="warning")
+        reset_config({"CONFIG": _DEFAULT_CONFIG, "PATH": _DEFAULT_PATH})
 
     cfg = read_config_file_menu(menu="CONFIG")
+
+    # Backward compatibility: a config.INI written by an older version lacks
+    # settings added since. Backfill any default CONFIG keys it is missing
+    # (e.g. auto_update, auto_update_delay, ignored_version) without touching
+    # the user's existing values, so upgrading clients gain new params smoothly.
+    missing = {key: value for key, value in _DEFAULT_CONFIG.items()
+               if key not in cfg}
+    if missing:
+        write_config_file_values(missing, menu="CONFIG")
+        Output.print(f"Config: added missing default(s): {', '.join(missing)}",
+                     level="info")
+
     if cfg["first_launch"].strip().lower() != "true":
         return False
 

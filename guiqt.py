@@ -11,16 +11,21 @@ import difflib
 import logging
 import datetime
 import time
+import threading
 
 
 from custom_path import Path
-from general import (read_config_file, write_config_file, write_config_file_values,
-                     is_empty, clean_line, clean_text, snapshot, get_raw,
-                     URL_RE)
+from general import (read_config_file, read_config_file_menu, write_config_file,
+                     write_config_file_values, is_empty, clean_line, clean_text,
+                     snapshot, get_raw, URL_RE)
 from output import Output
 from logger import Logger
 from todolist import ToDoList
 from version import version_nb
+from autoupdate import (fetch_remote_version_py, extract_version_nb,
+                        should_offer_update, is_update_available,
+                        fetch_remote_requirements, requirements_changed,
+                        update_to_latest, STARTUP_CHECK_DEFAULT_DELAY_S)
 
 from PyQt6.QtGui import (
     QFont, QIcon, QAction, QActionGroup, QDesktopServices,
@@ -609,6 +614,13 @@ class SliderDefaultMarker(QWidget):
 
 class MainWindow(QMainWindow):
     _remote_change = pyqtSignal(dict)
+    # Carries an update-check result from the worker thread to the GUI thread:
+    # (remote version number or "" on failure, whether the check was manual).
+    _update_checked = pyqtSignal(str, bool)
+    # Carries the outcome of an in-progress update from the worker thread to the
+    # GUI thread: "restart" (deployed, restart now), "manual" (dependencies
+    # changed → reinstall) or "error" (download/deploy failed, nothing changed).
+    _update_finished = pyqtSignal(str)
 
     def __init__(self, todolist: ToDoList, debounce_ms: int = 500,
                  width: int = 1000, height: int = 1000,
@@ -655,6 +667,17 @@ class MainWindow(QMainWindow):
         # Route remote-file changes (background thread) safely to the main thread
         todolist.set_on_remote_change(self._remote_change.emit)
         self._remote_change.connect(self._on_remote_file_change)
+
+        # Update check: the worker thread emits _update_checked, handled on the
+        # GUI thread. The flag stops overlapping checks.
+        self._update_check_running = False
+        self._update_checked.connect(self._on_update_checked)
+        # Update run (download + deploy): same off-thread pattern; the flag stops
+        # overlapping update runs.
+        self._update_running = False
+        self._update_finished.connect(self._on_update_finished)
+        # Automatic update check at startup (after a configurable delay).
+        self._schedule_startup_update_check()
 
         # Hourly backup: writes a new param backup, or just refreshes the
         # timestamp of the last one when nothing changed (see _backup_param).
@@ -732,6 +755,33 @@ class MainWindow(QMainWindow):
         tray_menu.addMenu(language_menu)
 
         tray_menu.addSeparator()
+        # Update submenu — groups the two update entries under one item to keep
+        # the tray menu short. The auto-check toggle persists to config.INI
+        # (read defensively with .get so an older config lacking the key still
+        # works); "Check for updates now" runs a manual check (handy when the
+        # auto-check is off or a release was previously ignored).
+        update_menu = QMenu(self.tr("Update"), tray_menu)
+        update_menu.setIcon(QIcon.fromTheme("system-software-update"))
+        auto_update_action = QAction(self.tr("Check automatically at startup"),
+                                     update_menu)
+        auto_update_action.setCheckable(True)
+        auto_update_action.setChecked(
+            read_config_file_menu("CONFIG").get("auto_update", "true")
+            .strip().lower() == "true")
+        auto_update_action.toggled.connect(lambda checked: (
+            write_config_file("auto_update", str(checked).lower()),
+            Output.print(f"Auto-update check: {checked}", level="info"),
+        ))
+        update_menu.addAction(auto_update_action)
+        check_update_action = QAction(QIcon.fromTheme("view-refresh"),
+                                      self.tr("Check for updates now"),
+                                      update_menu)
+        check_update_action.triggered.connect(
+            lambda: self._check_for_updates(manual=True))
+        update_menu.addAction(check_update_action)
+        tray_menu.addMenu(update_menu)
+        tray_menu.addSeparator()
+
         start_hidden_action = QAction(self.tr("Hidden at startup"), self)
         start_hidden_action.setCheckable(True)
         start_hidden_action.setChecked(read_config_file(param="start_hidden").strip().lower() == "true")
@@ -740,6 +790,7 @@ class MainWindow(QMainWindow):
             Output.print(f"Start hidden: {checked}", level="info"),
         ))
         tray_menu.addAction(start_hidden_action)
+
         tray_menu.addSeparator()
         help_action = QAction(QIcon.fromTheme("help-contents"), self.tr("Help"), self)
         help_action.triggered.connect(self._show_help)
@@ -751,6 +802,206 @@ class MainWindow(QMainWindow):
         self._tray.setToolTip("Eisenhower Todo-List")
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
+
+    def _schedule_startup_update_check(self):
+        """If `auto_update` is on, schedule a one-shot automatic update check
+        `auto_update_delay` seconds after startup, giving the machine time to
+        finish booting and the user to get going first. `manual=False` keeps it
+        silent unless an update is actually offered.
+
+        The two settings are independent: `auto_update` (the menu toggle) turns
+        the check on/off, while `auto_update_delay` is read here but never
+        written, so a hand-set delay survives toggling the check off and on. The
+        delay is clamped to [0, 1 day] so a bogus value can't overflow QTimer.
+        """
+        cfg = read_config_file_menu("CONFIG")
+        if cfg.get("auto_update", "true").strip().lower() != "true":
+            Output.print("Auto-update: startup check disabled", level="info")
+            return
+        try:
+            delay = int(cfg.get("auto_update_delay",
+                                str(STARTUP_CHECK_DEFAULT_DELAY_S)))
+        except ValueError:
+            delay = STARTUP_CHECK_DEFAULT_DELAY_S
+        delay = max(0, min(delay, 86400))
+        Output.print(f"Auto-update: startup check scheduled in {delay}s",
+                     level="info")
+        QTimer.singleShot(delay * 1000,
+                          lambda: self._check_for_updates(manual=False))
+
+    def _check_for_updates(self, manual: bool = True):
+        """Start an update check off the GUI thread, then notify via the
+        _update_checked signal.
+
+        `manual=True` (tray menu) reports every outcome — update available,
+        already up to date, or check failed. The automatic startup check
+        (see _schedule_startup_update_check) passes `manual=False` to stay
+        silent unless an update is available.
+        """
+        if self._update_check_running:
+            Output.print("Update check already in progress", level="info")
+            return
+        self._update_check_running = True
+        Output.print("Checking for updates…", level="info")
+        threading.Thread(target=self._update_check_worker, args=(manual,),
+                         daemon=True).start()
+
+    def _update_check_worker(self, manual: bool):
+        """Background worker: the blocking network fetch + parse. Hands the
+        remote version (or "" on failure) back to the GUI thread through the
+        _update_checked signal; never touches widgets directly."""
+        remote = extract_version_nb(fetch_remote_version_py() or "")
+        self._update_checked.emit(remote, manual)
+
+    def _on_update_checked(self, remote_version: str, manual: bool):
+        """GUI-thread handler for an update-check result: compare the installed
+        version (version.py), the ignored version (config) and the remote version
+        (github), then notify accordingly.
+
+        A manual check ignores `ignored_version` — the user explicitly asks and
+        may want to reconsider a previously ignored release, so it only needs the
+        remote to be newer than what is installed. The automatic check honours
+        `ignored_version` so the ignored release is not proposed again (while a
+        release newer than the ignored one still is).
+        """
+        self._update_check_running = False
+        installed = version_nb()
+        ignored = read_config_file_menu("CONFIG").get("ignored_version", "")
+        offer = (is_update_available(installed, remote_version) if manual
+                 else should_offer_update(installed, ignored, remote_version))
+        Output.print(
+            f"Update check ({'manual' if manual else 'auto'}): "
+            f"installed(version.py)={installed}, "
+            f"ignored_version(config)={ignored or 'none'}, "
+            f"remote(github)={remote_version or 'unavailable'} -> offer={offer}",
+            level="info")
+
+        if not remote_version:                       # fetch failed / no number
+            if manual:
+                QMessageBox.warning(
+                    self, self.tr("Update check"),
+                    self.tr("Could not check for updates. "
+                            "Please try again later."))
+            return
+
+        if offer:
+            self._offer_update(installed, remote_version)
+        elif manual:
+            QMessageBox.information(
+                self, self.tr("Up to date"),
+                self.tr("EiTodo {0} is the latest version.").format(installed))
+
+    def _offer_update(self, installed: str, remote_version: str):
+        """Show the 'update available' dialog and act on the choice, updating
+        config (ignored_version) according to it:
+
+        - Update now: launch the update; ignored_version is left untouched here
+          and cleared to "" only once the update actually completes (in
+          _run_update). A failed update changes nothing, so it is offered again
+          next time — nothing to roll back.
+        - Ignore this version: record remote_version in ignored_version so the
+          automatic check won't propose this exact release again (a newer one
+          still will). The manual menu can still re-propose it — it ignores
+          ignored_version.
+        - Later / closed: leave ignored_version unchanged, so this release is
+          proposed again at the next automatic check.
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(self.tr("Update available"))
+        box.setText(self.tr("A new version of EiTodo is available."))
+        box.setInformativeText(self.tr(
+            "Installed version: {0}\nAvailable version: {1}").format(
+            installed, remote_version))
+        update_btn = box.addButton(self.tr("Update now"),
+                                   QMessageBox.ButtonRole.AcceptRole)
+        ignore_btn = box.addButton(self.tr("Ignore this version"),
+                                   QMessageBox.ButtonRole.ActionRole)
+        box.addButton(self.tr("Later"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(update_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        box.deleteLater()
+
+        if clicked is update_btn:
+            self._run_update(remote_version)
+        elif clicked is ignore_btn:
+            write_config_file("ignored_version", remote_version)
+            Output.print(f"Update {remote_version} ignored "
+                         f"(ignored_version set)", level="info")
+        # "Later" or closed: ignored_version left unchanged → this release is
+        # proposed again at the next automatic check.
+
+    def _run_update(self, remote_version: str):
+        """Start an in-app update to `remote_version`, off the GUI thread.
+
+        The heavy work (network fetch + archive download + file deploy) runs in
+        a worker thread that reports back through the _update_finished signal,
+        handled by _on_update_finished on the GUI thread. The flag stops
+        overlapping update runs.
+        """
+        if self._update_running:
+            Output.print("Update already in progress", level="info")
+            return
+        self._update_running = True
+        Output.print(f"Update to {remote_version} requested", level="info")
+        threading.Thread(target=self._update_worker, daemon=True).start()
+
+    def _update_worker(self):
+        """Background worker: decide the update path and, if safe, deploy the new
+        files. Never touches widgets — it only emits _update_finished with a
+        status string.
+
+        If the remote requirements.txt differs (or can't be fetched), a file
+        swap + restart could boot into missing dependencies, so we defer to a
+        manual reinstall. Otherwise the archive is deployed in place; user data
+        is gitignored and never part of the archive, so it is untouched.
+        """
+        status = "error"
+        try:
+            remote_req = fetch_remote_requirements()
+            try:
+                with open(Path.requirements_path, encoding="utf8") as f:
+                    local_req = f.read()
+            except OSError:
+                local_req = ""
+            if requirements_changed(local_req, remote_req):
+                status = "manual"
+            elif update_to_latest(Path.dir_path):
+                status = "restart"
+        finally:
+            self._update_finished.emit(status)
+
+    def _on_update_finished(self, status: str):
+        """GUI-thread handler for an update outcome.
+
+        - "restart": files deployed → clear the ignore marker (the release is
+          now installed) and re-exec the app to load the new code.
+        - "manual": dependencies changed → open GitHub so the user reinstalls.
+        - "error": download/deploy failed → nothing was changed; open GitHub.
+        """
+        self._update_running = False
+        if status == "restart":
+            write_config_file("ignored_version", "")
+            Output.print("Update deployed — restarting to apply it", level="info")
+            self._restart_app()
+            return
+        if status == "manual":
+            Output.print("Update needs a manual reinstall (dependencies changed)",
+                         level="info")
+            QMessageBox.information(
+                self, self.tr("Manual update required"),
+                self.tr("This update changes EiTodo's dependencies, so it can't "
+                        "be applied automatically. The download page will open — "
+                        "please reinstall to finish updating."))
+        else:  # "error"
+            Output.print("Update failed — nothing was changed", level="warning")
+            QMessageBox.warning(
+                self, self.tr("Update failed"),
+                self.tr("The update could not be downloaded or applied. Nothing "
+                        "was changed. Please try again later, or reinstall "
+                        "manually."))
+        QDesktopServices.openUrl(QUrl("https://github.com/vtflosa/EiTodo"))
 
     def _build_quadrants(self, font: str, font_size: int):
         """Build the central widget holding the four Eisenhower quadrants."""

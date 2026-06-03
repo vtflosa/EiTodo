@@ -109,6 +109,31 @@ def write_config_file_menu(data: dict, menu: str = "CONFIG") -> None:
         config.write(f)
 
 
+def config_is_usable() -> bool:
+    """True if config.INI exists, parses, and holds the required CONFIG and PATH
+    sections. False otherwise — missing file, empty, corrupt, or only partly
+    written. Lets the startup path recreate a broken config instead of crashing
+    when it is later read."""
+    config = configparser.ConfigParser()
+    try:
+        with open(Path.config_file_path, "r", encoding="utf8") as f:
+            config.read_file(f)
+    except (OSError, configparser.Error):
+        return False
+    return "CONFIG" in config and "PATH" in config
+
+
+def reset_config(sections: dict[str, dict]) -> None:
+    """(Re)create config.INI from scratch with exactly `sections`, WITHOUT
+    reading any existing (possibly corrupt) file. Used to reseed defaults when
+    config_is_usable() is False."""
+    config = configparser.ConfigParser()
+    for menu, data in sections.items():
+        config[menu] = data
+    with open(Path.config_file_path, "w", encoding="utf8") as f:
+        config.write(f)
+
+
 # ####################### END OFconfig.INI read and write  #########################################
 # ##################################################################################################
 

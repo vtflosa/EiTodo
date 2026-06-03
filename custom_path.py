@@ -50,6 +50,12 @@ class Path:
     icon_path = os.path.join(dir_path, "EiTodo.png")
     check_file(icon_path)
 
+    # Tracked dependency manifest, read by the in-app updater to detect a
+    # dependency change before a file-swap update. Not check_file'd: it is only
+    # consulted during an update, so its absence must degrade to a manual update,
+    # not crash startup.
+    requirements_path = os.path.join(dir_path, "requirements.txt")
+
     # ##########   Paths to be set and verified later  #################""
     # config_file
     config_file_path = os.path.join(dir_path, "config.INI")

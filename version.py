@@ -34,6 +34,8 @@ def version():
               "V 1.7 : efficiency/leak fixes — drop unused log queue, free modal dialogs,"
               " batch geometry config write, watchdog basename pre-filter, skip idle hourly backup\n"
               "V 1.8 : one-line curl install command + autostart selected by default\n"
-              "V 1.9 : atomic task moves — single write for move/mark-done/restore (no item loss)"
+              "V 1.9 : atomic task moves — single write for move/mark-done/restore (no item loss)\n"
+              "V 2.0 : in-app auto-update — GitHub version check, ignore/later, delayed startup"
+              " check, in-place file update + restart; tolerant config startup (recreate if corrupt)"
               )
     return v_text.split("\n")[-1]
