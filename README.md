@@ -103,7 +103,7 @@ Une aide détaillée est accessible via **menu → Aide** (dans la langue active
 
 #### Conseils d'utilisation
 
-- ✅ Multi-langues : français, anglais — changement via **menu → Changer la langue**
+- ✅ Multi-langues : changement via **menu → Changer la langue**
 - ✅ Synchronisation transparente entre plusieurs machines
 - ✅ Sauvegardes automatiques fréquentes et horodatées
 - ✅ Aucun serveur — toutes les données restent sur votre disque
@@ -236,7 +236,7 @@ A detailed help page is available via **menu → Help** (in the active language)
 
 #### Usage tips
 
-- ✅ Multilingual: French, English — switch via **menu → Change language**
+- ✅ Multilingual: switch via **menu → Change language**
 - ✅ Transparent sync across multiple machines
 - ✅ Frequent, timestamped automatic backups
 - ✅ No server — all data stays on your disk
