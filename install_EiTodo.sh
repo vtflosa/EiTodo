@@ -89,13 +89,14 @@ download() {
 # autostart .desktop is written near the end alongside the menu launcher.
 
 echo "Installation options:"
-echo "  1) Install and launch ${APP_NAME} at every login (autostart)"
+echo "  1) Install and launch ${APP_NAME} at every login (autostart) [default]"
 echo "  2) Install only (launch manually from the menu)"
 echo ""
-ENABLE_AUTOSTART=false
+ENABLE_AUTOSTART=true
 while true; do
-    read -rp "Choose [1/2]: " ans
-    case "$ans" in
+    # Empty input (just Enter) selects the default, option 1 (autostart).
+    read -rp "Choose [1/2] (default: 1): " ans
+    case "${ans:-1}" in
         1) ENABLE_AUTOSTART=true; break ;;
         2) ENABLE_AUTOSTART=false; break ;;
         *) echo "Please type 1 or 2." ;;

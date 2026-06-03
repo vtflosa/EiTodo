@@ -21,27 +21,25 @@ Conçu pour Linux uniquement (PyQt6, sauvegarde automatique au reboot via `syste
 
 ### Installation
 
-Télécharger le fichier [install_EiTodo.sh](https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh) (clic-droit → enregistrer la cible du lien sous…)
-
-Ouvrir un terminal dans le dossier de téléchargement et exécuter :
+Coller cette commande dans un terminal pour télécharger puis lancer l'installateur :
 
 ```bash
-bash install_EiTodo.sh
+curl -fsSL https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh -o /tmp/install_EiTodo.sh && bash /tmp/install_EiTodo.sh
 ```
 
 L'installateur demande au démarrage :
 
-1. **Installer et lancer au démarrage** — EiTodo se lance automatiquement à chaque ouverture de session.
+1. **Installer et lancer au démarrage** *(par défaut — appuyez sur Entrée)* — EiTodo se lance automatiquement à chaque ouverture de session.
 2. **Installer seulement** — lancement manuel depuis le menu des applications.
 
 Il télécharge le code, installe les dépendances système nécessaires (`python3.X-venv`, `python3-pip`, `libxcb-cursor0`), crée un environnement virtuel Python, installe PyQt6 et `watchdog`, puis met en place un raccourci dans le menu des applications et sur le bureau.
 
 ### Mise à jour
 
-Pour passer à une nouvelle version, il suffit de relancer l'installateur :
+Pour passer à une nouvelle version, relancer la même commande :
 
 ```bash
-bash install_EiTodo.sh
+curl -fsSL https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh -o /tmp/install_EiTodo.sh && bash /tmp/install_EiTodo.sh
 ```
 
 Le script récupère la dernière version depuis GitHub. **Vos données, sauvegardes et préférences sont conservées** : le `.gitignore` du dépôt exclut `config.INI`, `param.json`, `logs/` et `save/`, donc l'archive téléchargée ne les contient pas et la décompression ne les écrase pas. L'environnement Python est reconstruit proprement (`venv --clear`) et les dépendances réinstallées.
@@ -156,27 +154,25 @@ Linux only (PyQt6, reboot-save via `systemd-logind`).
 
 ### Installation
 
-Download the file [install_EiTodo.sh](https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh) (right-click → save link as…)
-
-Open a terminal in the download folder and run:
+Paste this command into a terminal to download and run the installer:
 
 ```bash
-bash install_EiTodo.sh
+curl -fsSL https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh -o /tmp/install_EiTodo.sh && bash /tmp/install_EiTodo.sh
 ```
 
 At the start the installer asks:
 
-1. **Install and launch at startup** — EiTodo launches automatically at every login.
+1. **Install and launch at startup** *(default — just press Enter)* — EiTodo launches automatically at every login.
 2. **Install only** — launch manually from the applications menu.
 
 It downloads the code, installs the required system packages (`python3.X-venv`, `python3-pip`, `libxcb-cursor0`), creates a Python virtual environment, installs PyQt6 and `watchdog`, and registers a shortcut in the applications menu and on the desktop.
 
 ### Updating
 
-To switch to a new version, just re-run the installer:
+To switch to a new version, run the same command again:
 
 ```bash
-bash install_EiTodo.sh
+curl -fsSL https://raw.githubusercontent.com/vtflosa/EiTodo/master/install_EiTodo.sh -o /tmp/install_EiTodo.sh && bash /tmp/install_EiTodo.sh
 ```
 
 The script fetches the latest version from GitHub. **Your data, backups and preferences are preserved**: the repository's `.gitignore` excludes `config.INI`, `param.json`, `logs/` and `save/`, so the downloaded archive does not contain them and the extraction does not overwrite them. The Python environment is rebuilt cleanly (`venv --clear`) and dependencies reinstalled.
