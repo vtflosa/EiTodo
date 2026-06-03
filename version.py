@@ -33,6 +33,7 @@ def version():
               " backup name collisions, CWD-independent portable paths\n"
               "V 1.7 : efficiency/leak fixes — drop unused log queue, free modal dialogs,"
               " batch geometry config write, watchdog basename pre-filter, skip idle hourly backup\n"
-              "V 1.8 : one-line curl install command + autostart selected by default"
+              "V 1.8 : one-line curl install command + autostart selected by default\n"
+              "V 1.9 : atomic task moves — single write for move/mark-done/restore (no item loss)"
               )
     return v_text.split("\n")[-1]

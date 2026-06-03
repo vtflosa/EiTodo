@@ -846,27 +846,33 @@ class MainWindow(QMainWindow):
         done_widget.set_items(current_done)
 
     def _on_mark_done(self, loc: str, item: str):
-        """Right-click → 'Mark as done': remove from active loc, prepend to done."""
+        """Right-click → 'Mark as done': remove from active loc, prepend to done.
+        Both quadrants are persisted in a single atomic write so the item can
+        never be lost if interrupted between two writes."""
         loc_done = _LOC_TO_DONE[loc]
         active_items = list(self.todolist.todolist_dict.get(loc, []))
+        done_items = list(self.todolist.todolist_dict.get(loc_done, []))
         if item in active_items:
             active_items.remove(item)
-            self.todolist.set_quadrant(loc, active_items)
-            self._editors[loc].set_content(active_items)
-        self._on_erased(loc_done, self._done_widgets[loc_done], [item])
+        if item not in done_items:
+            done_items.insert(0, item)
+        done_items = done_items[:_DONE_LIMIT]
+        self.todolist.set_quadrants({loc: active_items, loc_done: done_items})
+        self._editors[loc].set_content(active_items)
+        self._done_widgets[loc_done].set_items(done_items)
 
     def _on_move_to(self, src_loc: str, target_loc: str, item: str):
-        """Right-click → 'Move to quadrant': move between active quadrants."""
+        """Right-click → 'Move to quadrant': move between active quadrants in a
+        single atomic write (item never half-moved on a crash between writes)."""
         src_items = list(self.todolist.todolist_dict.get(src_loc, []))
+        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
         if item in src_items:
             src_items.remove(item)
-            self.todolist.set_quadrant(src_loc, src_items)
-            self._editors[src_loc].set_content(src_items)
-        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
         if item not in target_items:
             target_items.insert(0, item)
-            self.todolist.set_quadrant(target_loc, target_items)
-            self._editors[target_loc].set_content(target_items)
+        self.todolist.set_quadrants({src_loc: src_items, target_loc: target_items})
+        self._editors[src_loc].set_content(src_items)
+        self._editors[target_loc].set_content(target_items)
 
     def _on_restore(self, loc_done: str, item: str):
         """Right-click on done → 'Restore': back to the corresponding active loc."""
@@ -874,17 +880,17 @@ class MainWindow(QMainWindow):
         self._on_restore_to(loc_done, target_loc, item)
 
     def _on_restore_to(self, loc_done: str, target_loc: str, item: str):
-        """Right-click on done → 'Restore to quadrant': back to a chosen active loc."""
+        """Right-click on done → 'Restore to quadrant': back to a chosen active
+        loc, in a single atomic write spanning both quadrants."""
         done_items = list(self.todolist.todolist_dict.get(loc_done, []))
+        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
         if item in done_items:
             done_items.remove(item)
-            self.todolist.set_quadrant(loc_done, done_items)
-            self._done_widgets[loc_done].set_items(done_items)
-        target_items = list(self.todolist.todolist_dict.get(target_loc, []))
         if item not in target_items:
             target_items.insert(0, item)
-            self.todolist.set_quadrant(target_loc, target_items)
-            self._editors[target_loc].set_content(target_items)
+        self.todolist.set_quadrants({loc_done: done_items, target_loc: target_items})
+        self._done_widgets[loc_done].set_items(done_items)
+        self._editors[target_loc].set_content(target_items)
 
     def _on_delete_permanent(self, loc_done: str, item: str):
         """Right-click on done → 'Delete permanently': drop the item for good."""

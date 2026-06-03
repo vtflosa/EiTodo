@@ -306,6 +306,18 @@ class ToDoList:
         self.todolist_dict[loc] = items
         self._write_locked(modified_locs={loc})
 
+    def set_quadrants(self, updates: dict[str, list[str]]):
+        """Replace several quadrants' content in a single atomic write — so an
+        operation that spans two quadrants (move between actives, mark done,
+        restore) can never leave the item half-removed if interrupted between
+        two writes. Generalises set_quadrant."""
+        for loc in updates:
+            self._validate_loc(loc)
+        self._refresh()
+        for loc, items in updates.items():
+            self.todolist_dict[loc] = items
+        self._write_locked(modified_locs=set(updates))
+
     def consume_updated_since_backup(self) -> bool:
         """Return whether the data changed (locally or from another instance)
         since the last call, and reset the flag. Lets the hourly backup skip its
