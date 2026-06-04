@@ -252,12 +252,35 @@ def first_launch() -> bool:
     # the user's existing values, so upgrading clients gain new params smoothly.
     missing = {key: value for key, value in _DEFAULT_CONFIG.items()
                if key not in cfg}
+    # An existing, readable config that merely lost its 'first_launch' key is NOT
+    # a fresh install (a genuine first launch is recreated wholesale by
+    # ensure_usable_config). Backfilling the _DEFAULT_CONFIG value "True" would
+    # wrongly trigger the first-launch reset below and wipe the user's settings,
+    # so force the backfilled value to "False".
+    if "first_launch" in missing:
+        missing["first_launch"] = "False"
     if missing:
         write_config_file_values(missing, menu="CONFIG")
         Output.print(f"Config: added missing default(s): {', '.join(missing)}",
                      level="info")
 
-    if cfg["first_launch"].strip().lower() != "true":
+    # Same backfill for the [PATH] section: a partial or hand-edited config that
+    # kept the [PATH] header but lost a key (e.g. json_file_path) would otherwise
+    # make set_and_check_paths() raise KeyError — before the logger is even up and
+    # outside main()'s try/except, so the app would just die. config_is_usable()
+    # only checks that the sections exist, not their keys, so guard the keys here.
+    path_cfg = read_config_file_menu(menu="PATH")
+    missing_path = {key: value for key, value in _DEFAULT_PATH.items()
+                    if key not in path_cfg}
+    if missing_path:
+        write_config_file_values(missing_path, menu="PATH")
+        Output.print(f"Config: added missing default path(s): "
+                     f"{', '.join(missing_path)}", level="info")
+
+    # cfg was read before the CONFIG backfill above, so a config that lacked the
+    # 'first_launch' key would KeyError here. Default to "False": an existing
+    # config is not a fresh install, so it must not take the first-launch reset.
+    if cfg.get("first_launch", "False").strip().lower() != "true":
         return False
 
     # create necessary folders and the default data file

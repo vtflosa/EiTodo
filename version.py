@@ -38,6 +38,7 @@ def version():
               "V 2.0 : in-app auto-update — GitHub version check, ignore/later, delayed startup"
               " check, in-place file update + restart; tolerant config startup (recreate if corrupt)\n"
               "V 2.1 : data-loss safeguards — salvage data path on config recovery, retry failed writes, "
-              "back up a file before overwrite"
+              "back up a file before overwrite\n"
+              "V 2.1.1 : fix cross-instance data loss on failed write + robust startup on partial config"
               )
     return v_text.split("\n")[-1]

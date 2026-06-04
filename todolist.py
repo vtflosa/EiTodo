@@ -490,6 +490,15 @@ class ToDoList:
                         if loc not in modified_locs and loc in fresh:
                             self.todolist_dict[loc] = fresh[loc]
 
+                # Snapshot the sync metadata so a failed write can roll it back.
+                # _build_payload() bumps _version/_updated_at/_last_writer; if the
+                # write never reaches disk, keeping the higher in-memory version
+                # would let a later flush_pending_write()'s merge guard
+                # (fresh.version > self._version) miss — and overwrite — a
+                # concurrent instance's changes.
+                prev_version = self._version
+                prev_updated_at = self._updated_at
+                prev_last_writer = self._last_writer
                 payload = self._build_payload()
 
                 try:
@@ -507,6 +516,12 @@ class ToDoList:
                     # previous content (atomic write never half-wrote it). Surface
                     # it so the edit is not lost silently, and remember the pending
                     # quadrants so flush_pending_write() can retry from memory.
+                    # Roll back the metadata _build_payload() bumped: the write
+                    # never reached disk, so the in-memory version must match disk
+                    # again, otherwise a later retry overwrites a concurrent change.
+                    self._version = prev_version
+                    self._updated_at = prev_updated_at
+                    self._last_writer = prev_last_writer
                     self._write_failed = True
                     self._pending_locs |= modified_locs
                     Output.print(f"Failed to write data file ({self.path}): {e}",
