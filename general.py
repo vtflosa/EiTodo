@@ -189,9 +189,10 @@ def is_empty(line: str) -> bool:
 
 
 def clean_line(line: str) -> str:
-    """Normalize one line to the display form '• Capitalized text', or '' if empty."""
+    """Normalize one line to the display form '• Capitalized text', or '' if empty.
+    Collapses repeated leading bullets, so '• • text' becomes '• text'."""
     s = line.lstrip()
-    if s.startswith("•"):
+    while s.startswith("•"):
         s = s[1:].lstrip()
     if not s:
         return ""

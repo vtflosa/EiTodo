@@ -39,6 +39,7 @@ def version():
               " check, in-place file update + restart; tolerant config startup (recreate if corrupt)\n"
               "V 2.1 : data-loss safeguards — salvage data path on config recovery, retry failed writes, "
               "back up a file before overwrite\n"
-              "V 2.1.1 : fix cross-instance data loss on failed write + robust startup on partial config"
+              "V 2.1.1 : fix cross-instance data loss on failed write + robust startup on partial config\n"
+              "V 2.1.2 : clean_line collapses repeated leading bullets ('• •' -> '• ')"
               )
     return v_text.split("\n")[-1]
